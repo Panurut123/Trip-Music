@@ -12,9 +12,12 @@
     "dev:web": "npm run dev --workspace @trip-music/web",
     "dev:tablet": "npm run dev --workspace @trip-music/tablet",
     "build": "npm run build --workspace @trip-music/shared && npm run build --workspace @trip-music/web && npm run build --workspace @trip-music/tablet",
+    "build:web": "npm run build --workspace @trip-music/shared && npm run build --workspace @trip-music/web",
+    "vercel-build": "npm run build --workspace @trip-music/shared && npm run build --workspace @trip-music/web",
     "typecheck": "npm run build --workspace @trip-music/shared && npm run typecheck --workspace @trip-music/web && npm run typecheck --workspace @trip-music/tablet",
     "test": "npm run test --workspace @trip-music/shared && npm run test --workspace @trip-music/tablet",
     "lint": "npm run lint --workspace @trip-music/web"
+
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
