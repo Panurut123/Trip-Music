@@ -11,6 +11,27 @@ import { resolveRoomId } from "@/lib/room";
 type SeatStatus = { exists: boolean; nickname: string | null };
 type Stage = "select" | "verify" | "register";
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const value = err as Record<string, unknown>;
+    const parts = [value.message, value.details, value.hint, value.code]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+    if (parts.length) return parts.join(" · ");
+    try { return JSON.stringify(err); } catch { return ""; }
+  }
+  return String(err ?? "");
+}
+
+function friendlyLoginError(err: unknown): string {
+  const raw = getErrorMessage(err);
+  if (/crypt|gen_salt|pgcrypto|function .* does not exist/i.test(raw))
+    return "ระบบ PIN ใน Supabase ยังไม่พร้อม — กรุณารัน migration 0008_fix_pin_pgcrypto.sql";
+  if (/claim_seat|seat_status|schema cache|function/i.test(raw))
+    return "ฐานข้อมูลระบบ PIN ยังไม่อัปเดตครบ — กรุณารัน migration ล่าสุดใน Supabase";
+  return raw || "เชื่อมต่อไม่ได้ ลองอีกครั้งนะ";
+}
+
 export default function LoginPage() {
   const [seat, setSeat] = useState(7);
   const [stage, setStage] = useState<Stage>("select");
@@ -72,10 +93,7 @@ export default function LoginPage() {
       }
       setPin("");
     } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err ?? "");
-      setError(raw.includes("seat_status") || raw.includes("function")
-        ? "ยังไม่ได้ติดตั้ง migration ระบบ PIN ล่าสุด (0007) ใน Supabase"
-        : raw || "เชื่อมต่อไม่ได้ ลองอีกครั้งนะ");
+      setError(friendlyLoginError(err));
     } finally {
       setBusy(false);
     }
@@ -115,7 +133,7 @@ export default function LoginPage() {
     try {
       await claim({ seatNo: remembered.seatNo, pin: remembered.pin, nickname: remembered.nickname }, true);
     } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err ?? "");
+      const raw = getErrorMessage(err);
       if (raw.includes("invalid_pin")) {
         setSeat(remembered.seatNo);
         setSeatStatus({ exists: true, nickname: remembered.nickname });
@@ -139,11 +157,11 @@ export default function LoginPage() {
     try {
       await claim({ seatNo: seat, pin, nickname: stage === "register" ? nickname : seatStatus?.nickname }, remember);
     } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err ?? "");
+      const raw = getErrorMessage(err);
       if (raw.includes("invalid_pin")) setError("PIN ไม่ถูกต้อง ลองใหม่อีกครั้ง");
       else if (raw.includes("seat_taken")) setError("เลขที่นี้ถูกลงทะเบียนพร้อมกันจากอีกเครื่อง กรุณาลองใหม่");
       else if (raw.includes("blocked")) setError("เลขที่นี้ถูกระงับการขอเพลง");
-      else setError(raw || "เชื่อมต่อไม่ได้ ลองอีกครั้งนะ");
+      else setError(friendlyLoginError(err));
     } finally {
       setBusy(false);
     }
