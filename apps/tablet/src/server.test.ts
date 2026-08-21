@@ -107,6 +107,30 @@ describe("bus display session & server endpoints", () => {
     await agent.get("/player").expect(200);
     await agent.post("/api/reset").expect(200);
   });
+
+  it("does not emit a noisy favicon 404", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trip-server-")); dirs.push(dir);
+    const app = createServer(new TripWorker({ cache: new CacheStore(dir), resolvers: [], providers: [] }));
+    await request(app).get("/favicon.ico").expect(204);
+  });
+
+  it("guards direct LAN queue requests in production so PIN/queue limits cannot be bypassed", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trip-server-")); dirs.push(dir);
+    const app = createServer(new TripWorker({ cache: new CacheStore(dir), resolvers: [], providers: [] }), { displayToken: "test-token" });
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousLocalFlag = process.env.ALLOW_LOCAL_MEDIA_TEST;
+    process.env.NODE_ENV = "production";
+    process.env.ALLOW_LOCAL_MEDIA_TEST = "false";
+    try {
+      await request(app).post("/api/queue/request").send({ sourceUrl: "https://www.youtube.com/watch?v=jNQXAC9IVRw" }).expect(401);
+      const agent = request.agent(app);
+      await agent.get("/player").expect(200);
+      await agent.post("/api/queue/request").send({ sourceUrl: "https://www.youtube.com/watch?v=jNQXAC9IVRw" }).expect(200);
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+      process.env.ALLOW_LOCAL_MEDIA_TEST = previousLocalFlag;
+    }
+  });
 });
 
 

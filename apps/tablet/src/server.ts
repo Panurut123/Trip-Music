@@ -55,6 +55,7 @@ export function createServer(worker: TripWorker, options: { displayToken?: strin
   };
 
   app.get("/", (_req, res) => res.redirect("/player"));
+  app.get("/favicon.ico", (_req, res) => res.status(204).end());
   app.get("/player", grantDisplaySession, (_req, res) => res.sendFile(path.join(publicDir, "player.html")));
   app.get("/control", grantDisplaySession, (_req, res) => res.sendFile(path.join(publicDir, "control.html")));
   app.get("/diagnostics", grantDisplaySession, (_req, res) => res.sendFile(path.join(publicDir, "diagnostics.html")));
@@ -74,12 +75,18 @@ export function createServer(worker: TripWorker, options: { displayToken?: strin
   app.get("/api/queue", (_req, res) => res.json(worker.getQueue()));
   app.get("/api/network", (_req, res) => res.json({ addresses: networkAddresses(), port: tabletConfig.port, playerUrls: networkAddresses().map((ip) => `http://${ip}:${tabletConfig.port}/player`) }));
   app.get("/events", (req, res) => { res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" }); res.flushHeaders(); clients.add(res); res.write(`data: ${JSON.stringify({ state: worker.state, queue: worker.getQueue() })}\n\n`); req.on("close", () => clients.delete(res)); });
-  app.post("/api/queue/request", async (req, res) => {
+  const queueRequestGuard: express.RequestHandler = (req, res, next) => {
+    // Public student requests belong on the Supabase-authenticated web flow.
+    // The LAN endpoint is intentionally only open during local development/tests;
+    // in production it requires the bus display session so passengers cannot bypass PIN/limits.
+    if (process.env.NODE_ENV !== "production" || isLocalMediaTestEnabled()) return next();
+    return displaySession(req, res, next);
+  };
+  app.post("/api/queue/request", queueRequestGuard, async (req, res) => {
     const { sourceUrl, requestedMode, requesterNickname, seatNo } = req.body ?? {};
     const safe = validateSourceUrl(sourceUrl, { allowLocalhost: isLocalMediaTestEnabled(), allowMock: isLocalMediaTestEnabled() || process.env.NODE_ENV !== "production" });
     if (!safe.ok) return res.status(400).json({ error: safe.reason });
     const item = await worker.enqueueRequest({ sourceUrl: safe.normalized, requestedMode, requesterNickname, seatNo });
-
     push();
     res.json(item);
   });

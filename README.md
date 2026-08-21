@@ -30,7 +30,7 @@ Media bytes never pass through Vercel or Supabase Storage. Supabase stores metad
 
 ## Supabase setup
 
-The local web environment is already configured with the supplied project URL and publishable key, but it starts in `DEMO_MODE=true`. Do not commit `.env.local`, service-role keys, or database passwords.
+Do not commit `.env.local`, service-role keys, API keys, PINs, or database passwords. Production defaults to `DEMO_MODE=false`.
 
 1. Install the Supabase CLI using the official instructions.
 2. Authenticate and link the project:
@@ -46,7 +46,7 @@ supabase db push
 4. Copy the seeded `rooms.id` for `6/18` into `DEFAULT_ROOM_ID` in both the web and tablet environment files.
 5. For production tablet sync, set `SUPABASE_SERVICE_ROLE_KEY` only in the tablet's private `.env`; never put it in `apps/web` or browser code.
 
-The current environment does not have the Supabase CLI installed, so migration application is documented but not executed automatically. The SQL migration is ready at `supabase/migrations/0001_trip_music.sql`.
+Apply all migrations in `supabase/migrations` in numeric order. Migration `0007_seat_pin_sessions.sql` is required for the final seat + 4-digit PIN login flow and upgrades legacy plaintext PINs to pgcrypto hashes.
 
 ## Windows development
 
@@ -83,7 +83,7 @@ ADMIN_PIN
 ADMIN_SESSION_SECRET
 ```
 
-The web app never processes or proxies media files. The public student entry point is `/login`; admin entry is `/admin/login`.
+The web app never processes or proxies media files. The public student entry point is `/login`; admin entry is `/admin/login`. Existing seats log in with seat number + PIN only; nickname is requested only the first time a seat is registered.
 
 ## Galaxy Tab S9 / Termux
 

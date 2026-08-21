@@ -1,116 +1,149 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { Credit } from "@/components/Brand";
 import { generateUUID } from "@/lib/data";
+import { getOrCreateDeviceId, getRememberedProfile, saveProfile, type StoredTripProfile } from "@/lib/profile-storage";
 import { getSupabase } from "@/lib/supabase";
 import { webConfig } from "@/lib/config";
+import { resolveRoomId } from "@/lib/room";
+
+type SeatStatus = { exists: boolean; nickname: string | null };
+type Stage = "select" | "verify" | "register";
 
 export default function LoginPage() {
-  const [section, setSection] = useState<"ก" | "ข">("ก");
-  const [seatInRoom, setSeatInRoom] = useState(7);
+  const [seat, setSeat] = useState(7);
+  const [stage, setStage] = useState<Stage>("select");
+  const [seatStatus, setSeatStatus] = useState<SeatStatus | null>(null);
   const [nickname, setNickname] = useState("");
   const [pin, setPin] = useState("");
   const [remember, setRemember] = useState(true);
+  const [remembered, setRemembered] = useState<StoredTripProfile | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const actualSeatNo = section === "ก" ? seatInRoom : 20 + seatInRoom;
-
   useEffect(() => {
-    const saved = localStorage.getItem("trip-music-profile");
-    if (saved) {
-      try {
-        const p = JSON.parse(saved);
-        if (p.seatNo) {
-          if (p.seatNo > 20) {
-            setSection("ข");
-            setSeatInRoom(p.seatNo - 20);
-          } else {
-            setSection("ก");
-            setSeatInRoom(p.seatNo);
-          }
-        }
-        if (p.section) setSection(p.section);
-        if (p.nickname) setNickname(p.nickname);
-        if (p.pin) setPin(p.pin);
-      } catch {}
+    const switching = new URLSearchParams(window.location.search).get("switch") === "1";
+    if (!switching) {
+      const saved = getRememberedProfile();
+      if (saved) {
+        setRemembered(saved);
+        setSeat(saved.seatNo);
+      }
     }
   }, []);
 
+  async function ensureAuth() {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error("Supabase ยังไม่ได้ตั้งค่า");
+    const session = await supabase.auth.getSession();
+    if (session.data.session?.user) return supabase;
+    const auth = await supabase.auth.signInAnonymously();
+    if (auth.error || !auth.data.user) throw new Error("เปิด Anonymous Sign-ins ใน Supabase ก่อน");
+    return supabase;
+  }
+
+  function chooseSeat(nextSeat: number) {
+    setSeat(nextSeat);
+    setStage("select");
+    setSeatStatus(null);
+    setNickname("");
+    setPin("");
+    setError("");
+  }
+
+  async function inspectSeat() {
+    setBusy(true);
+    setError("");
+    try {
+      const supabase = await ensureAuth();
+      const { data, error: rpcError } = await supabase.rpc("seat_status", {
+        p_room_id: await resolveRoomId(supabase),
+        p_seat_no: seat,
+      });
+      if (rpcError) throw rpcError;
+      const status = (data ?? { exists: false, nickname: null }) as SeatStatus;
+      setSeatStatus(status);
+      if (status.exists) {
+        setNickname(status.nickname ?? "");
+        setStage("verify");
+      } else {
+        setStage("register");
+      }
+      setPin("");
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err ?? "");
+      setError(raw.includes("seat_status") || raw.includes("function")
+        ? "ยังไม่ได้ติดตั้ง migration ระบบ PIN ล่าสุด (0007) ใน Supabase"
+        : raw || "เชื่อมต่อไม่ได้ ลองอีกครั้งนะ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function claim(profile: { seatNo: number; pin: string; nickname?: string | null }, shouldRemember: boolean) {
+    if (!/^\d{4}$/.test(profile.pin)) throw new Error("กรุณาใส่ PIN ตัวเลข 4 หลัก");
+    const nextNickname = profile.nickname?.trim() || null;
+    if (stage === "register" && (!nextNickname || nextNickname.length > 20)) throw new Error("กรุณาใส่ชื่อเล่น 1–20 ตัวอักษร");
+
+    const deviceId = getOrCreateDeviceId(generateUUID);
+    const supabase = await ensureAuth();
+    const { data, error: rpcError } = await supabase.rpc("claim_seat", {
+      p_room_id: await resolveRoomId(supabase),
+      p_seat_no: profile.seatNo,
+      p_device_id: deviceId,
+      p_pin: profile.pin,
+      p_nickname: nextNickname,
+    });
+    if (rpcError) throw rpcError;
+
+    const row = data as { nickname?: string; seat_no?: number } | null;
+    const stored: StoredTripProfile = {
+      seatNo: Number(row?.seat_no ?? profile.seatNo),
+      nickname: String(row?.nickname ?? nextNickname ?? seatStatus?.nickname ?? remembered?.nickname ?? "Passenger"),
+      pin: profile.pin,
+      deviceId,
+    };
+    saveProfile(stored, shouldRemember);
+    window.location.href = "/queue";
+  }
+
+  async function continueRemembered() {
+    if (!remembered) return;
+    setBusy(true);
+    setError("");
+    try {
+      await claim({ seatNo: remembered.seatNo, pin: remembered.pin, nickname: remembered.nickname }, true);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err ?? "");
+      if (raw.includes("invalid_pin")) {
+        setSeat(remembered.seatNo);
+        setSeatStatus({ exists: true, nickname: remembered.nickname });
+        setNickname(remembered.nickname);
+        setStage("verify");
+        setPin("");
+        setRemembered(null);
+        setError("PIN ที่จำไว้ใช้ไม่ได้แล้ว กรุณาใส่ PIN อีกครั้ง");
+      } else {
+        setError(raw || "เชื่อมต่อไม่ได้ ลองอีกครั้งนะ");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
-    if (!nickname.trim() || nickname.trim().length > 20) {
-      setError("กรุณาใส่ชื่อเล่น 1–20 ตัวอักษร");
-      return;
-    }
-    if (!/^\d{4}$/.test(pin.trim())) {
-      setError("กรุณาใส่รหัส PIN ตัวเลข 4 หลัก (เช่น 1234)");
-      return;
-    }
     setBusy(true);
+    setError("");
     try {
-      const deviceId = localStorage.getItem("trip-music-device") ?? generateUUID();
-      localStorage.setItem("trip-music-device", deviceId);
-
-      const supabase = getSupabase();
-      if (supabase && !webConfig.demoMode) {
-        let authUid: string | null = null;
-        try {
-          const sessionRes = await supabase.auth.getSession();
-          if (sessionRes.data.session?.user?.id) {
-            authUid = sessionRes.data.session.user.id;
-          } else {
-            const anonRes = await supabase.auth.signInAnonymously();
-            if (!anonRes.error && anonRes.data.user) {
-              authUid = anonRes.data.user.id;
-            }
-          }
-        } catch {}
-
-        if (!authUid) {
-          try {
-            const email = `seat_${actualSeatNo}_${deviceId.slice(0, 8)}@trip.local`;
-            const password = `trip_device_${deviceId.slice(0, 12)}!`;
-            const signInRes = await supabase.auth.signInWithPassword({ email, password });
-            if (!signInRes.error && signInRes.data.user) {
-              authUid = signInRes.data.user.id;
-            } else {
-              const signUpRes = await supabase.auth.signUp({ email, password });
-              if (!signUpRes.error && signUpRes.data.user) {
-                authUid = signUpRes.data.user.id;
-              }
-            }
-          } catch {}
-        }
-
-        const roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
-        const { error: profileError } = await supabase.rpc("ensure_profile", {
-          p_room_id: roomId,
-          p_seat_no: actualSeatNo,
-          p_nickname: `${nickname.trim()}`,
-          p_device_id: deviceId,
-          p_pin: pin.trim(),
-        });
-        if (profileError) {
-          if (String(profileError.message).includes("invalid_pin")) {
-            setError("รหัส PIN 4 หลักไม่ถูกต้อง (เลขที่นี้ถูกตั้งรหัสไว้แล้ว)");
-            setBusy(false);
-            return;
-          }
-        }
-      }
-
-      if (remember) {
-        localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), pin: pin.trim(), deviceId }));
-      } else {
-        localStorage.removeItem("trip-music-profile");
-      }
-      window.location.href = "/queue";
+      await claim({ seatNo: seat, pin, nickname: stage === "register" ? nickname : seatStatus?.nickname }, remember);
     } catch (err) {
-      console.error("[login] error:", err);
-      localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), pin: pin.trim(), deviceId: generateUUID() }));
-      window.location.href = "/queue";
+      const raw = err instanceof Error ? err.message : String(err ?? "");
+      if (raw.includes("invalid_pin")) setError("PIN ไม่ถูกต้อง ลองใหม่อีกครั้ง");
+      else if (raw.includes("seat_taken")) setError("เลขที่นี้ถูกลงทะเบียนพร้อมกันจากอีกเครื่อง กรุณาลองใหม่");
+      else if (raw.includes("blocked")) setError("เลขที่นี้ถูกระงับการขอเพลง");
+      else setError(raw || "เชื่อมต่อไม่ได้ ลองอีกครั้งนะ");
     } finally {
       setBusy(false);
     }
@@ -121,35 +154,36 @@ export default function LoginPage() {
       <section className="login-card">
         <div className="login-head">
           <h1>ยินดีต้อนรับสู่ <span>Trip Music</span></h1>
-          <p>เลือกรหัสของคุณเพื่อเข้าร่วมคิวเพลงบนรถ</p>
+          <p>เลือกเลขที่ของคุณ แล้วใช้ PIN เดิมเพื่อกลับเข้ามาได้จากทุกเครื่อง</p>
         </div>
 
-        <div className="number-panel glass">
-          <div className="section-switch">
-            <button
-              type="button"
-              className={`section-tab-btn ${section === "ก" ? "active" : ""}`}
-              onClick={() => setSection("ก")}
-            >
-              ห้อง ก (1–20)
+        {remembered && (
+          <div className="saved-profile glass">
+            <div>
+              <span className="saved-profile-kicker">จำคุณได้จากเครื่องนี้</span>
+              <strong>{remembered.nickname}</strong>
+              <small>เลขที่ {String(remembered.seatNo).padStart(2, "0")}</small>
+            </div>
+            <button type="button" className="primary-button compact" onClick={continueRemembered} disabled={busy}>
+              ใช่ เข้าเลย →
             </button>
-            <button
-              type="button"
-              className={`section-tab-btn ${section === "ข" ? "active" : ""}`}
-              onClick={() => setSection("ข")}
-            >
-              ห้อง ข (1–20)
-            </button>
+            <button type="button" className="text-button" onClick={() => setRemembered(null)}>ไม่ใช่ฉัน</button>
           </div>
+        )}
 
-          <div className="number-grid" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
-            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+        <div className="number-panel glass">
+          <div className="number-panel-head">
+            <span>เลือกเลขที่</span>
+            <strong>{String(seat).padStart(2, "0")}</strong>
+          </div>
+          <div className="number-grid">
+            {Array.from({ length: 38 }, (_, i) => i + 1).map((n) => (
               <button
                 type="button"
                 key={n}
-                className={`number-button ${seatInRoom === n ? "selected" : ""}`}
-                onClick={() => setSeatInRoom(n)}
-                aria-pressed={seatInRoom === n}
+                className={`number-button ${seat === n ? "selected" : ""}`}
+                onClick={() => chooseSeat(n)}
+                aria-pressed={seat === n}
               >
                 {String(n).padStart(2, "0")}
               </button>
@@ -157,45 +191,66 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form className="login-form" onSubmit={submit}>
-          <label htmlFor="nickname">♙ &nbsp; ห้อง {section} • เลขที่ {String(seatInRoom).padStart(2, "0")}</label>
-          <input
-            id="nickname"
-            className="text-input"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            placeholder="ชื่อเล่นของคุณ (e.g., Beam)"
-            maxLength={20}
-            autoComplete="nickname"
-          />
+        {stage === "select" ? (
+          <div className="login-form">
+            <button type="button" className="primary-button" onClick={inspectSeat} disabled={busy}>
+              {busy ? "กำลังตรวจสอบ…" : `ต่อด้วยเลขที่ ${String(seat).padStart(2, "0")} →`}
+            </button>
+            <p className="login-note">ถ้าเลขที่นี้เคยลงทะเบียนแล้ว ระบบจะถามแค่ PIN — ไม่ต้องกรอกชื่อใหม่</p>
+            {error && <div className="error-message" role="alert">{error}</div>}
+          </div>
+        ) : (
+          <form className="login-form identity-step" onSubmit={submit}>
+            <div className="identity-summary">
+              <span>เลขที่ {String(seat).padStart(2, "0")}</span>
+              <strong>{stage === "verify" ? (seatStatus?.nickname || "สมาชิก Trip Music") : "ลงทะเบียนครั้งแรก"}</strong>
+              <button type="button" className="text-button" onClick={() => chooseSeat(seat)}>เปลี่ยนเลขที่</button>
+            </div>
 
-          <label htmlFor="pin" style={{ marginTop: 14 }}>🔒 &nbsp; รหัส PIN 4 หลัก (สำหรับเข้าซ้ำ / ป้องกันผู้อื่นแย่งเลขที่)</label>
-          <input
-            id="pin"
-            className="text-input"
-            type="password"
-            inputMode="numeric"
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-            placeholder="รหัส PIN 4 ตัว (เช่น 1234)"
-            maxLength={4}
-            autoComplete="current-password"
-          />
+            {stage === "register" && (
+              <>
+                <label htmlFor="nickname">ชื่อเล่น</label>
+                <input
+                  id="nickname"
+                  className="text-input"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="ชื่อเล่นของคุณ (เช่น Beam)"
+                  maxLength={20}
+                  autoComplete="nickname"
+                />
+              </>
+            )}
 
-          <label className="remember">
-            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-            จำฉันไว้ในเครื่องนี้
-          </label>
-          {error && <div className="error-message" role="alert">{error}</div>}
-          <button className="primary-button" disabled={busy}>
-            {busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ Trip Music  →"}
-          </button>
-          <p className="login-note">ⓘ PIN 4 หลักใช้ป้องกันไม่ให้ผู้อื่นกดเลือกเลขที่ของคุณซ้ำ</p>
-        </form>
+            <label htmlFor="pin">{stage === "verify" ? "ใส่ PIN 4 หลักของคุณ" : "ตั้ง PIN 4 หลัก"}</label>
+            <input
+              id="pin"
+              className="text-input pin-input"
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="••••"
+              maxLength={4}
+              autoComplete="current-password"
+              autoFocus
+            />
+
+            <label className="remember">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              จำฉันไว้ในเครื่องนี้
+            </label>
+            {error && <div className="error-message" role="alert">{error}</div>}
+            <button className="primary-button" disabled={busy || pin.length !== 4}>
+              {busy ? "กำลังเข้าสู่ระบบ…" : stage === "verify" ? "เข้า Trip Music →" : "สร้างโปรไฟล์และเข้า →"}
+            </button>
+            <p className="login-note">
+              {stage === "verify" ? "เปลี่ยนเครื่องก็ใช้เลขที่ + PIN เดิมได้ ชื่อเล่นจะกลับมาอัตโนมัติ" : "ครั้งต่อไปใช้เลขที่ + PIN นี้ได้เลย ไม่ต้องใส่ชื่อใหม่"}
+            </p>
+          </form>
+        )}
         <Credit />
       </section>
     </main>
   );
 }
-
-

@@ -4,8 +4,10 @@ import { demoCover, demoItems, demoState } from "@/lib/demo";
 import { StudentNav } from "@/components/StudentNav";
 import { calculateEta, type QueueItem, type SystemState } from "@trip-music/shared";
 import { getSupabase } from "@/lib/supabase";
-import { generateUUID, mapQueueRow, mapStateRow } from "@/lib/data";
+import { mapQueueRow, mapStateRow } from "@/lib/data";
+import { clearProfile, getStoredProfile, type StoredTripProfile } from "@/lib/profile-storage";
 import { webConfig } from "@/lib/config";
+import { resolveRoomId } from "@/lib/room";
 
 export default function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>(webConfig.demoMode ? demoItems : []);
@@ -14,6 +16,7 @@ export default function QueuePage() {
   const [requestedMode, setRequestedMode] = useState<"audio" | "video">("audio");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [profile, setProfile] = useState<StoredTripProfile | null>(null);
 
   const current = items.find(i => i.id === state?.currentQueueItemId) ?? items.find(i => i.status === "playing") ?? null;
   const pending = items.filter(i => ["waiting", "preparing", "ready"].includes(i.status));
@@ -31,8 +34,9 @@ export default function QueuePage() {
     if (webConfig.demoMode) return;
     let cancelled = false;
 
-    const saved = localStorage.getItem("trip-music-profile");
-    if (!saved && !webConfig.demoMode && typeof window !== "undefined") {
+    const storedProfile = getStoredProfile();
+    setProfile(storedProfile);
+    if (!storedProfile && !webConfig.demoMode && typeof window !== "undefined") {
       window.location.href = "/login";
       return;
     }
@@ -45,17 +49,20 @@ export default function QueuePage() {
         if (!sessionRes.data.session) {
           await supabase.auth.signInAnonymously();
         }
-        if (saved) {
-          const p = JSON.parse(saved);
-          const deviceId = p.deviceId || localStorage.getItem("trip-music-device") || generateUUID();
-          const roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
-
-          await supabase.rpc("ensure_profile", {
+        if (storedProfile) {
+          const roomId = await resolveRoomId(supabase);
+          const { error: claimError } = await supabase.rpc("claim_seat", {
             p_room_id: roomId,
-            p_seat_no: p.seatNo ?? 7,
-            p_nickname: p.nickname ?? "Passenger",
-            p_device_id: deviceId,
+            p_seat_no: storedProfile.seatNo,
+            p_nickname: null,
+            p_device_id: storedProfile.deviceId,
+            p_pin: storedProfile.pin,
           });
+          if (claimError) {
+            clearProfile();
+            window.location.href = "/login";
+            return;
+          }
         }
       } catch {}
     };
@@ -82,7 +89,7 @@ export default function QueuePage() {
     const loadFromSupabase = async () => {
       const supabase = getSupabase();
       if (!supabase) { await loadFromTablet(); return; }
-      let roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+      const roomId = await resolveRoomId(supabase);
       try {
         const [q, s] = await Promise.all([
           supabase.from("queue_items").select("*").eq("room_id", roomId).order("sort_order"),
@@ -120,16 +127,16 @@ export default function QueuePage() {
     if (!sourceUrl.trim()) return;
     setSubmitting(true);
     setMessage("");
-    const saved = typeof window !== "undefined" ? localStorage.getItem("trip-music-profile") : null;
-    const profile = saved ? JSON.parse(saved) : { nickname: "You", seatNo: 7 };
-    const deviceId = profile.deviceId || (typeof window !== "undefined" ? localStorage.getItem("trip-music-device") : null) || generateUUID();
+    const activeProfile = getStoredProfile();
+    if (!activeProfile) { setSubmitting(false); window.location.href = "/login"; return; }
+    const deviceId = activeProfile.deviceId;
 
     try {
       let enqueued = false;
       const supabase = getSupabase();
       if (!webConfig.demoMode && supabase) {
         try {
-          let roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+          const roomId = await resolveRoomId(supabase);
           const { data, error } = await supabase.rpc("enqueue_track", {
             p_room_id: roomId,
             p_source_url: sourceUrl.trim(),
@@ -141,27 +148,27 @@ export default function QueuePage() {
             enqueued = true;
           } else if (error) {
             const errStr = String(error.message || "");
-            if (errStr.includes("pending limit") || errStr.includes("duplicate") || errStr.includes("blocked")) {
+            if (errStr.includes("pending limit") || errStr.includes("duplicate") || errStr.includes("blocked") || errStr.includes("requests disabled") || errStr.includes("profile required") || errStr.includes("authentication")) {
               throw error;
             }
           }
         } catch (supaErr) {
           const errStr = String((supaErr as any)?.message || "");
-          if (errStr.includes("pending limit") || errStr.includes("duplicate") || errStr.includes("blocked")) {
+          if (errStr.includes("pending limit") || errStr.includes("duplicate") || errStr.includes("blocked") || errStr.includes("requests disabled") || errStr.includes("profile required") || errStr.includes("authentication")) {
             throw supaErr;
           }
         }
       }
 
-      if (!enqueued && !webConfig.demoMode) {
+      if (!enqueued && !webConfig.demoMode && webConfig.allowTabletQueueFallback) {
         const res = await fetch(`${tabletBase}/api/queue/request`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sourceUrl: sourceUrl.trim(),
             requestedMode,
-            requesterNickname: profile.nickname ?? "You",
-            seatNo: profile.seatNo ?? 7,
+            requesterNickname: activeProfile.nickname,
+            seatNo: activeProfile.seatNo,
           }),
         });
         if (res.ok) {
@@ -169,6 +176,10 @@ export default function QueuePage() {
           setItems(v => [...v.filter(x => x.id !== item.id), item]);
           enqueued = true;
         }
+      }
+
+      if (!enqueued && !webConfig.demoMode) {
+        throw new Error("queue unavailable");
       }
 
       if (enqueued) {
@@ -186,6 +197,10 @@ export default function QueuePage() {
         setMessage("ขณะนี้ปิดรับคำขอเพลงชั่วคราว");
       } else if (raw.includes("blocked")) {
         setMessage("บัญชีนี้ถูกระงับการขอเพลง");
+      } else if (raw.includes("profile required") || raw.includes("authentication")) {
+        clearProfile();
+        setMessage("เซสชันหมดอายุ กำลังพากลับไปหน้าเข้าใช้งาน…");
+        setTimeout(() => { window.location.href = "/login"; }, 600);
       } else {
         setMessage("ไม่สามารถส่งเพลงได้ ตรวจสอบลิงก์อีกครั้ง");
       }
@@ -244,13 +259,13 @@ export default function QueuePage() {
                 <h2 className="section-label">UP NEXT</h2>
                 <div className="queue-list">
                   {pending.map((item, i) => (
-                    <article className={`queue-row ${item.requesterNickname === "You" ? "mine" : ""}`} key={item.id}>
+                    <article className={`queue-row ${profile && item.seatNo === profile.seatNo ? "mine" : ""}`} key={item.id}>
                       <div className="queue-number">#{i + 1}</div>
                       <div className="cover sm" style={{ backgroundImage: item.thumbnailUrl || item.coverUrlOriginal ? `url(${item.thumbnailUrl || item.coverUrlOriginal})` : demoCover(item.id) }} />
                       <div className="queue-meta">
                         <div className="track-title">{display(item)}</div>
                         <div className="track-artist">{item.metadataStatus === "failed" ? "" : item.artist}</div>
-                        <div className="queue-foot">{item.requesterNickname === "You" ? "☆ เพลงของคุณ" : `Requested by ${item.requesterNickname ?? "Passenger"}`}</div>
+                        <div className="queue-foot">{profile && item.seatNo === profile.seatNo ? "☆ เพลงของคุณ" : `Requested by ${item.requesterNickname ?? "Passenger"}`}</div>
                       </div>
                       <span className="mode-badge">⚡ {item.playbackType === "embed" ? "YOUTUBE" : item.requestedMode.toUpperCase()}</span>
                       <span className="duration">{item.durationSeconds ? `${Math.floor(item.durationSeconds / 60)}:${String(item.durationSeconds % 60).padStart(2, "0")}` : "--:--"}</span>

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trip Music Player</title>
+<link rel="icon" href="data:,">
 <style>
 :root {
   --bg: #0b0d13;
@@ -255,12 +256,12 @@ body {
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgba(0, 0, 0, 0.88) 0%,
-    rgba(0, 0, 0, 0.25) 20%,
-    transparent 35%,
-    transparent 65%,
-    rgba(0, 0, 0, 0.35) 78%,
-    rgba(0, 0, 0, 0.92) 100%
+    rgba(0, 0, 0, 0.68) 0%,
+    rgba(0, 0, 0, 0.10) 22%,
+    transparent 38%,
+    transparent 72%,
+    rgba(0, 0, 0, 0.14) 84%,
+    rgba(0, 0, 0, 0.58) 100%
   );
   z-index: 10;
 }
@@ -306,11 +307,47 @@ body {
   align-items: center;
 }
 
+
+.video-mode .main-pane, .youtube-mode .main-pane {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.video-mode .status-pill, .youtube-mode .status-pill { display: none !important; }
+.video-mode .controls, .youtube-mode .controls { margin-top: 0; }
+.video-mode .button, .youtube-mode .button {
+  min-width: 48px;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 16px;
+}
+.video-mode .button.primary, .youtube-mode .button.primary { width: auto; min-width: 0; padding: 0 18px; border-radius: 24px; }
+.video-mode .hud-track-meta, .youtube-mode .hud-track-meta,
+.video-mode .hud-bottom, .youtube-mode .hud-bottom {
+  transition: opacity .55s ease, transform .55s ease;
+}
+.video-mode.idle .hud-track-meta, .youtube-mode.idle .hud-track-meta {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.video-mode.idle .hud-bottom, .youtube-mode.idle .hud-bottom {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+.video-mode.idle .shell, .youtube-mode.idle .shell { background: transparent; }
+.youtube-mode .youtube-container, .video-mode .video { opacity: 1 !important; visibility: visible !important; }
+
 /* Controls Auto-fade in Video Mode */
 .video-mode.idle .controls, .youtube-mode.idle .controls,
 .video-mode.idle .next-pill, .youtube-mode.idle .next-pill,
 .video-mode.idle .status-pill, .youtube-mode.idle .status-pill {
-  opacity: 0.18;
+  opacity: 0;
   transition: opacity 0.8s ease;
 }
 
@@ -415,7 +452,6 @@ body {
           <button class="button primary" id="start">▶ START TRIP</button>
           <button class="button" id="pause" title="พัก / เล่นต่อ">Ⅱ</button>
           <button class="button" id="skip" title="ข้ามเพลง">▶|</button>
-          <button class="button danger" id="reset" title="ล้างคิวทั้งหมด">🗑️</button>
         </div>
 
         <div class="next-pill" id="next-pill">
@@ -456,7 +492,7 @@ import {createPlayerController,fallbackCover} from '/player-controller.js';
 
 const $=selector=>document.querySelector(selector), audio=$('#audio'), video=$('#video');
 let snapshot=null, lastProgressSent=0, advancing=false, lastEndedTrackId=null, lastErrorTrackId=null;
-let idleTimer=null;
+let idleTimer=null, lastRenderedTrackId=null;
 
 function resetIdleTimer() {
   document.body.classList.remove('idle');
@@ -465,7 +501,7 @@ function resetIdleTimer() {
     if(snapshot?.state?.playbackStatus==='playing'){
       document.body.classList.add('idle');
     }
-  }, 5000);
+  }, 3500);
 }
 window.addEventListener('mousemove', resetIdleTimer);
 window.addEventListener('touchstart', resetIdleTimer);
@@ -616,6 +652,10 @@ const youtubeAdapter=createYouTubeAdapter();
 const controller=createPlayerController({audio,video,youtube:youtubeAdapter,cover:$('#cover')});
 
 function escapeText(value){const node=document.createElement('div');node.textContent=String(value??'');return node.innerHTML;}
+function setArtworkBackground(element, source, seed){
+  if(!element) return;
+  element.style.backgroundImage = source ? `url("${String(source).replace(/"/g, '%22')}")` : fallbackCover(seed);
+}
 
 async function onTrackEnded(source){
   if(source !== controller.getActiveType()){
@@ -646,6 +686,11 @@ async function sync(data){
   snapshot=data;
   const state=data.state||{}, queue=data.queue||[];
   const current=queue.find(item=>item.id===state.currentQueueItemId)||null;
+  const currentTrackId=current?.id||null;
+  if(currentTrackId && currentTrackId!==lastRenderedTrackId){
+    lastRenderedTrackId=currentTrackId;
+    resetIdleTimer();
+  }
   const isTripStarted = Boolean(state.tripStarted || state.currentQueueItemId || state.playbackStatus==='playing' || state.playbackStatus==='paused');
 
   // De-emphasize / hide START TRIP button once trip has started
@@ -706,8 +751,8 @@ async function sync(data){
   } else {
     const next1 = upcoming[0];
     $('#next-pill-title').textContent = next1.title;
-    const nextCover = next1.localCoverKey ? `/covers/${encodeURIComponent(next1.localCoverKey)}` : next1.thumbnailUrl || fallbackCover(next1.id);
-    $('#next-pill-cover').style.backgroundImage = `url("${nextCover}")`;
+    const nextCover = next1.localCoverKey ? `/covers/${encodeURIComponent(next1.localCoverKey)}` : (next1.thumbnailUrl || next1.coverUrlOriginal || null);
+    setArtworkBackground($('#next-pill-cover'), nextCover, next1.id);
     if(document.body.classList.contains('youtube-mode') || document.body.classList.contains('video-mode')){
       $('#next-pill').style.display='flex';
     }
@@ -754,12 +799,6 @@ $('#skip').onclick=async()=>{
   await refresh();
 };
 
-$('#reset').onclick=async()=>{
-  if(confirm("ต้องการล้างคิวเพลงทั้งหมดใช่หรือไม่?")){
-    await post('/api/reset');
-    await refresh();
-  }
-};
 
 $('#unlock-play').onclick=()=>{
   $('#autoplay-overlay').style.display='none';
@@ -794,7 +833,9 @@ setInterval(()=>{
   }
 },1000);
 
-new EventSource('/events').onmessage=event=>void sync(JSON.parse(event.data));
+const eventSource=new EventSource('/events');
+eventSource.onmessage=event=>void sync(JSON.parse(event.data));
+eventSource.onerror=()=>{ console.warn('[player] event stream reconnecting'); void refresh().catch(()=>{}); };
 await refresh();
 </script>
 </body>
