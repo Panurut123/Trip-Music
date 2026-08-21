@@ -323,6 +323,10 @@ export class TripWorker {
     let next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
     if (!next) {
       await this.replenishBuffer();
+      if (this.state.currentQueueItemId && this.state.playbackStatus === "playing") {
+        this.touch();
+        return this.current();
+      }
       next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
     }
 
@@ -331,6 +335,7 @@ export class TripWorker {
     } else {
       this.state.playbackStatus = "idle";
     }
+
     this.touch();
     void this.replenishBuffer();
     return next ?? null;

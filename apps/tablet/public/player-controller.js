@@ -83,13 +83,15 @@ export function createPlayerController({
       key = `audio:${current.localMediaKey}`;
     }
 
-    // Stop inactive players when switching type or on initial sync
-    if (activeType !== type) {
-      if (type !== "audio") stopAndClear(audio);
-      if (type !== "video") stopAndClear(video);
-      if (type !== "youtube" && youtube && typeof youtube.stopVideo === "function") youtube.stopVideo();
-    }
+    const previousType = activeType;
+    const previousKey = activeKey;
+    activeType = type;
+    activeKey = key;
 
+    // Stop inactive players
+    if (type !== "audio") stopAndClear(audio);
+    if (type !== "video") stopAndClear(video);
+    if (type !== "youtube" && youtube && typeof youtube.stopVideo === "function") youtube.stopVideo();
 
     root.classList.toggle("video-mode", type === "video" || type === "youtube");
     root.classList.toggle("youtube-mode", type === "youtube");
@@ -97,7 +99,7 @@ export function createPlayerController({
     if (type === "youtube") {
       if (youtube) {
         const position = Number(state.playbackPositionSeconds ?? 0);
-        if (activeKey !== key) {
+        if (previousType !== "youtube" || previousKey !== key) {
           if (state.playbackStatus === "playing") {
             if (typeof youtube.loadVideo === "function") {
               youtube.loadVideo(current.embedId, position);
@@ -112,8 +114,6 @@ export function createPlayerController({
               youtube.cueVideoById({ videoId: current.embedId, startSeconds: position });
             }
           }
-          activeKey = key;
-          activeType = type;
         } else {
           if (state.playbackStatus === "paused" && typeof youtube.pauseVideo === "function") {
             youtube.pauseVideo();
@@ -128,7 +128,8 @@ export function createPlayerController({
     const active = type === "video" ? video : audio;
     if (!active) return null;
 
-    if (activeKey !== key) {
+    if (previousType !== type || previousKey !== key || active._mediaKey !== key) {
+      active._mediaKey = key;
       active.pause();
       active.src = `/media/${encodeURIComponent(current.localMediaKey)}`;
       active.load();
@@ -136,11 +137,12 @@ export function createPlayerController({
       if (position > 0) {
         const seek = () => { try { active.currentTime = position; } catch {} };
         if (active.readyState >= 1) seek();
-        else active.addEventListener("loadedmetadata", seek, { once: true });
+        else if (typeof active.addEventListener === "function") active.addEventListener("loadedmetadata", seek, { once: true });
       }
-      activeKey = key;
-      activeType = type;
     }
+
+
+
 
     if (state.playbackStatus === "paused") {
       active.pause();

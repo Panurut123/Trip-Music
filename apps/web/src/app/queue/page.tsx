@@ -17,8 +17,13 @@ export default function QueuePage() {
 
   const current = items.find(i => i.id === state?.currentQueueItemId) ?? items.find(i => i.status === "playing") ?? null;
   const pending = items.filter(i => ["waiting", "preparing", "ready"].includes(i.status));
-  const recentlyPlayed = items.filter(i => ["played", "skipped"].includes(i.status));
+  const recentlyPlayed = useMemo(() => {
+    return items
+      .filter(i => ["played", "skipped"].includes(i.status))
+      .sort((a, b) => (b.finishedAt ? Date.parse(b.finishedAt) : 0) - (a.finishedAt ? Date.parse(a.finishedAt) : 0));
+  }, [items]);
   const eta = useMemo(() => calculateEta(items, state?.playbackPositionSeconds ?? 0), [items, state?.playbackPositionSeconds]);
+
 
   const tabletBase = typeof window !== "undefined" ? `http://${window.location.hostname}:3000` : "http://localhost:3000";
 
