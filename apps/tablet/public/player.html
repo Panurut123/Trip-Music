@@ -504,11 +504,21 @@ function createYouTubeAdapter(){
             if(window.YT && event.data===window.YT.PlayerState.PLAYING){
               $('#autoplay-overlay').style.display='none';
             }else if(window.YT && event.data===window.YT.PlayerState.ENDED){
+              const cur = snapshot?.queue?.find(item => item.id === snapshot?.state?.currentQueueItemId);
+              const pos = youtubeAdapter.getCurrentTime();
+              const dur = cur?.durationSeconds || youtubeAdapter.getDuration() || 0;
+              if(dur > 5 && pos < dur - 4){
+                console.log('[yt] premature ended event ignored (pos:', pos, 'dur:', dur, ')');
+                return;
+              }
               void onTrackEnded('youtube');
             }
           },
           onError:event=>{
-            void onTrackError(event?.data);
+            console.warn('[yt] player error event:', event?.data);
+            if(controller.getActiveType()==='youtube'){
+              void onTrackError('youtube', event?.data);
+            }
           },
           onAutoplayBlocked:()=>{
             $('#autoplay-overlay').style.display='flex';
@@ -549,6 +559,10 @@ const controller=createPlayerController({audio,video,youtube:youtubeAdapter,cove
 function escapeText(value){const node=document.createElement('div');node.textContent=String(value??'');return node.innerHTML;}
 
 async function onTrackEnded(source){
+  if(source !== controller.getActiveType()){
+    console.log('[player] ignored ended from inactive source:', source, 'active is:', controller.getActiveType());
+    return;
+  }
   const currentId=snapshot?.state?.currentQueueItemId;
   if(!currentId||advancing||lastEndedTrackId===currentId)return;
   advancing=true;lastEndedTrackId=currentId;
@@ -557,7 +571,8 @@ async function onTrackEnded(source){
   finally{setTimeout(()=>{advancing=false;},1200);}
 }
 
-async function onTrackError(err){
+async function onTrackError(source, err){
+  if(source && source !== controller.getActiveType()) return;
   const currentId=snapshot?.state?.currentQueueItemId;
   if(!currentId||lastErrorTrackId===currentId)return;
   lastErrorTrackId=currentId;
@@ -566,6 +581,7 @@ async function onTrackError(err){
   setTimeout(()=>{banner.style.display='none';},4000);
   try{await post('/api/player/skip');await refresh();}catch(e){console.error('[player] error skip',e);}
 }
+
 
 async function sync(data){
   snapshot=data;
