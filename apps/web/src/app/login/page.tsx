@@ -174,78 +174,104 @@ export default function LoginPage() {
 
   return (
     <main className="login-page">
+      <div className="login-ambient ambient-a" aria-hidden="true" />
+      <div className="login-ambient ambient-b" aria-hidden="true" />
       <section className="login-card">
         <header className="login-head">
-          <div className="login-brand">Trip Music</div>
-          <div className="login-kicker">6/18 FIELD TRIP • 2026</div>
+          <div className="login-logo-wrap">
+            <span className="login-logo-mark" aria-hidden="true">♪</span>
+            <div>
+              <div className="login-brand">Trip Music</div>
+              <div className="login-kicker">6/18 FIELD TRIP • 2026</div>
+            </div>
+          </div>
           <h1>เลือกที่นั่งของคุณ</h1>
-          <p>ครั้งแรกตั้งชื่อเล่นและ PIN 4 หลัก • เครื่องอื่นใช้ PIN เดิมได้เลย</p>
+          <p>ครั้งแรกตั้งชื่อเล่นกับ PIN 4 หลัก แล้วใช้ PIN เดิมกลับเข้ามาได้จากทุกเครื่อง</p>
+          <div className="login-steps" aria-label="ขั้นตอนการเข้าสู่ระบบ">
+            <span className={stage === "select" ? "active" : "done"}><b>1</b> ห้อง</span>
+            <i />
+            <span className={stage === "select" ? "active" : "done"}><b>2</b> เลขที่</span>
+            <i />
+            <span className={stage !== "select" ? "active" : ""}><b>3</b> PIN</span>
+          </div>
         </header>
 
         {remembered && (
-          <div className="saved-profile glass">
+          <div className="saved-profile glass welcome-back-card">
+            <div className="saved-avatar" aria-hidden="true">{remembered.nickname.slice(0, 1).toUpperCase()}</div>
             <div>
               <span className="saved-profile-kicker">ยินดีต้อนรับกลับ</span>
               <strong>{remembered.nickname}</strong>
               <small>{formatSeatLabel(remembered.seatNo)}</small>
             </div>
-            <button type="button" className="primary-button compact" onClick={continueRemembered} disabled={busy}>เข้า Trip Music →</button>
+            <button type="button" className="primary-button compact" onClick={continueRemembered} disabled={busy}>เข้าเลย <span>→</span></button>
             <button type="button" className="text-button" onClick={() => setRemembered(null)}>ไม่ใช่ฉัน</button>
           </div>
         )}
 
-        <div className="group-switch" role="tablist" aria-label="เลือกห้อง">
-          <button type="button" className={group === "A" ? "active" : ""} onClick={() => resetIdentity("A", Math.min(number, 20))}>
-            <span>ห้อง ก</span><small>20 คน</small>
-          </button>
-          <button type="button" className={group === "B" ? "active" : ""} onClick={() => resetIdentity("B", Math.min(number, 20))}>
-            <span>ห้อง ข</span><small>20 คน</small>
-          </button>
-        </div>
-
-        <div className="number-panel glass">
-          <div className="number-panel-head">
-            <span>{group === "A" ? "ห้อง ก" : "ห้อง ข"} • เลือกเลขที่</span>
-            <strong>{selectedLabel}</strong>
-          </div>
-          <div className="number-grid group-number-grid">
-            {Array.from({ length: 20 }, (_, i) => i + 1).map(n => (
-              <button type="button" key={n} className={`number-button ${number === n ? "selected" : ""}`} onClick={() => resetIdentity(group, n)} aria-pressed={number === n}>
-                {String(n).padStart(2, "0")}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {stage === "select" ? (
-          <div className="login-form">
-            {error && <div className="error-message" role="alert">{error}</div>}
-            <button type="button" className="primary-button" onClick={inspectSeat} disabled={busy}>
-              {busy ? "กำลังตรวจสอบ…" : `ต่อด้วย ${selectedLabel} →`}
+        <section className="login-selection glass">
+          <div className="selection-label"><span>STEP 01</span><strong>เลือกห้อง</strong></div>
+          <div className="group-switch" role="tablist" aria-label="เลือกห้อง">
+            <button type="button" className={group === "A" ? "active" : ""} onClick={() => resetIdentity("A", Math.min(number, 20))}>
+              <small>GROUP A</small><span>ห้อง ก</span><em>01–20</em>
+            </button>
+            <button type="button" className={group === "B" ? "active" : ""} onClick={() => resetIdentity("B", Math.min(number, 20))}>
+              <small>GROUP B</small><span>ห้อง ข</span><em>01–20</em>
             </button>
           </div>
+
+          <div className="number-panel">
+            <div className="number-panel-head">
+              <div><small>STEP 02</small><span>เลือกเลขที่ • {group === "A" ? "ห้อง ก" : "ห้อง ข"}</span></div>
+              <strong>{selectedLabel}</strong>
+            </div>
+            <div className="number-grid group-number-grid">
+              {Array.from({ length: 20 }, (_, i) => i + 1).map(n => (
+                <button type="button" key={n} className={`number-button ${number === n ? "selected" : ""}`} onClick={() => resetIdentity(group, n)} aria-pressed={number === n}>
+                  {String(n).padStart(2, "0")}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {stage === "select" ? (
+          <div className="login-form continue-step">
+            {error && <div className="error-message" role="alert"><span>!</span><div>{error}</div></div>}
+            <button type="button" className="primary-button login-continue" onClick={inspectSeat} disabled={busy}>
+              <span>{busy ? "กำลังตรวจสอบ…" : `ต่อด้วย ${selectedLabel}`}</span><b aria-hidden="true">→</b>
+            </button>
+            <p className="login-note">ระบบจะตรวจว่าเลขที่นี้ลงทะเบียนไว้แล้วหรือยัง</p>
+          </div>
         ) : (
-          <form className="login-form identity-step" onSubmit={submit}>
+          <form className="login-form identity-step glass" onSubmit={submit}>
             <div className="identity-summary">
-              <span>{selectedLabel}</span>
-              <strong>{stage === "verify" ? (seatStatus?.nickname || "สมาชิก Trip Music") : "ลงทะเบียนครั้งแรก"}</strong>
-              <button type="button" className="text-button" onClick={() => resetIdentity(group, number)}>เปลี่ยนที่นั่ง</button>
+              <div className="identity-seat"><span>{selectedLabel}</span><small>{group === "A" ? "ห้อง ก" : "ห้อง ข"}</small></div>
+              <div className="identity-copy">
+                <small>{stage === "verify" ? "WELCOME BACK" : "FIRST TIME"}</small>
+                <strong>{stage === "verify" ? (seatStatus?.nickname || "สมาชิก Trip Music") : "ลงทะเบียนครั้งแรก"}</strong>
+              </div>
+              <button type="button" className="text-button" onClick={() => resetIdentity(group, number)}>เปลี่ยน</button>
             </div>
 
             {stage === "register" && (
-              <>
+              <div className="field-group">
                 <label htmlFor="nickname">ชื่อเล่น</label>
-                <input id="nickname" className="text-input" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="เช่น Beam" maxLength={20} autoComplete="nickname" />
-              </>
+                <div className="field-wrap"><span aria-hidden="true">☺</span><input id="nickname" className="text-input" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="เช่น Beam" maxLength={20} autoComplete="nickname" /></div>
+                <small>ชื่อนี้จะแสดงข้างเพลงที่คุณขอ</small>
+              </div>
             )}
 
-            <label htmlFor="pin">{stage === "verify" ? "ใส่ PIN 4 หลัก" : "ตั้ง PIN 4 หลัก"}</label>
-            <input id="pin" className="text-input pin-input" type="password" inputMode="numeric" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="••••" maxLength={4} autoComplete="current-password" autoFocus />
+            <div className="field-group">
+              <label htmlFor="pin">{stage === "verify" ? "ใส่ PIN 4 หลัก" : "ตั้ง PIN 4 หลัก"}</label>
+              <div className="field-wrap pin-wrap"><span aria-hidden="true">•</span><input id="pin" className="text-input pin-input" type="password" inputMode="numeric" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="••••" maxLength={4} autoComplete="current-password" autoFocus /></div>
+              <small>{stage === "verify" ? "ใช้ PIN ที่ตั้งไว้ครั้งแรก" : "จำง่าย ๆ 4 ตัว ใช้กลับเข้ามาจากเครื่องอื่นได้"}</small>
+            </div>
 
-            <label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />จำฉันไว้ในเครื่องนี้</label>
-            {error && <div className="error-message" role="alert">{error}</div>}
+            <label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="custom-check" aria-hidden="true">✓</span><span><b>จำฉันไว้ในเครื่องนี้</b><small>ครั้งหน้ากดเข้าได้เร็วขึ้น</small></span></label>
+            {error && <div className="error-message" role="alert"><span>!</span><div>{error}</div></div>}
             <button className="primary-button" disabled={busy || pin.length !== 4 || (stage === "register" && !nickname.trim())}>
-              {busy ? "กำลังเข้าสู่ระบบ…" : stage === "verify" ? "เข้า Trip Music →" : "ลงทะเบียนและเข้า →"}
+              <span>{busy ? "กำลังเข้าสู่ระบบ…" : stage === "verify" ? "เข้า Trip Music" : "ลงทะเบียนและเข้า"}</span><b aria-hidden="true">→</b>
             </button>
           </form>
         )}

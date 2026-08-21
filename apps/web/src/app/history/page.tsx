@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StudentNav } from "@/components/StudentNav";
 import { demoCover, demoItems } from "@/lib/demo";
 import { webConfig } from "@/lib/config";
@@ -7,6 +7,11 @@ import { getSupabase } from "@/lib/supabase";
 import { mapQueueRow } from "@/lib/data";
 import type { QueueItem } from "@trip-music/shared";
 import { formatSeatLabel } from "@/lib/seat";
+
+function formatDuration(sec?: number | null) {
+  if (!sec) return "--:--";
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<QueueItem[]>(webConfig.demoMode ? demoItems.slice(0, 3) : []);
@@ -40,44 +45,54 @@ export default function HistoryPage() {
     return () => { cancelled = true; void supabase.removeChannel(channel); };
   }, []);
 
+  const totalMinutes = useMemo(() => Math.round(history.reduce((sum, item) => sum + (item.durationSeconds || 0), 0) / 60), [history]);
+
   return (
-    <div className="mobile-page">
+    <div className="mobile-page student-app">
       <StudentNav active="history" />
-      <main className="mobile-content">
-        <p className="eyebrow">YOUR LISTENING LOG</p>
-        <h1 className="page-title">ประวัติการเล่น</h1>
-        <p className="subline">เพลงที่เล่นไปแล้วบนทริปนี้</p>
+      <main className="mobile-content history-screen">
+        <section className="student-hero history-hero">
+          <div>
+            <p className="eyebrow">6/18 FIELD TRIP • 2026</p>
+            <h1 className="page-title">ประวัติการเล่น</h1>
+            <p className="subline">เพลงที่ผ่านจอ Trip Music ไปแล้วในทริปนี้</p>
+          </div>
+          <div className="history-summary">
+            <div><strong>{history.length}</strong><span>เพลง</span></div>
+            <div><strong>{totalMinutes}</strong><span>นาที</span></div>
+          </div>
+        </section>
 
         {history.length === 0 ? (
-          <div className="glass" style={{ textAlign: "center", padding: "40px 20px", marginTop: 28, borderRadius: 24 }}>
-            <p style={{ fontSize: 18, fontWeight: 800, margin: "0 0 8px" }}>ยังไม่มีประวัติการเล่นเพลง</p>
-            <p style={{ color: "var(--muted)", margin: 0 }}>เพลงที่เล่นจบแล้วจะปรากฏที่นี่</p>
+          <div className="glass history-empty premium-empty">
+            <span className="empty-orb">↺</span>
+            <div><strong>ยังไม่มีประวัติการเล่นเพลง</strong><span>เพลงที่เล่นจบแล้วจะเรียงอยู่ตรงนี้</span></div>
           </div>
         ) : (
-          <div className="glass" style={{ marginTop: 28, padding: "4px 18px", borderRadius: 24 }}>
-            {history.map((item) => (
-              <div className="history-row" key={item.id}>
+          <section className="history-list glass">
+            <div className="history-list-head"><span>PLAYED</span><small>ล่าสุดก่อน</small></div>
+            {history.map((item, index) => (
+              <article className="history-row premium-history-row" key={item.id}>
+                <span className="history-index">{String(index + 1).padStart(2, "0")}</span>
                 <div
                   className="cover sm"
-                  style={{
-                    backgroundImage: item.thumbnailUrl || item.coverUrlOriginal
-                      ? `url(${item.thumbnailUrl || item.coverUrlOriginal})`
-                      : demoCover(item.id),
-                  }}
+                  style={{ backgroundImage: item.thumbnailUrl || item.coverUrlOriginal ? `url(${item.thumbnailUrl || item.coverUrlOriginal})` : demoCover(item.id) }}
                 />
                 <div className="queue-meta">
                   <div className="track-title">{item.title}</div>
                   <div className="track-artist">{item.artist}</div>
-                  <div className="queue-foot">
-                    {item.playbackType === "embed" ? "YouTube • Online" : item.requestedMode.toUpperCase()} • {item.requesterNickname ?? "Passenger"}{item.seatNo ? ` • ${formatSeatLabel(item.seatNo)}` : ""}
-                  </div>
+                  <div className="queue-foot">ขอโดย {item.requesterNickname ?? "Passenger"}{item.seatNo ? ` • ${formatSeatLabel(item.seatNo)}` : ""}</div>
                 </div>
-              </div>
+                <div className="history-end">
+                  <span className="mode-badge">{item.playbackType === "embed" ? "YT" : item.requestedMode === "video" ? "VIDEO" : "AUDIO"}</span>
+                  <span className="duration">{formatDuration(item.durationSeconds)}</span>
+                  <small>{item.status === "skipped" ? "SKIPPED" : "PLAYED"}</small>
+                </div>
+              </article>
             ))}
-          </div>
+          </section>
         )}
       </main>
     </div>
   );
 }
-

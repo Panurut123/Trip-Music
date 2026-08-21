@@ -250,107 +250,132 @@ export default function QueuePage() {
   };
 
   return (
-    <div className="mobile-page">
+    <div className="mobile-page student-app">
       <StudentNav active="queue" />
-      <main className="mobile-content" id="queue">
-        <p className="eyebrow">6/18 FIELD TRIP • 2026</p>
-        <h1 className="page-title">คิวเพลง</h1>
-        <p className="subline">
-          {activeItems.length} เพลงในคิว <span aria-hidden="true">•</span> เวลารอประมาณ {activeItems.length ? Math.max(1, Math.round(eta / 60)) : 0} นาที
-        </p>
-
-        {activeItems.length === 0 && !state?.tripStarted ? (
-          <div className="glass" style={{ textAlign: "center", padding: "40px 20px", marginTop: 24, borderRadius: 24 }}>
-            <p style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>ยังไม่มีเพลงในคิว</p>
-            <p style={{ color: "var(--muted)", margin: 0 }}>ส่งเพลงแรกของทริปได้เลย 🎵</p>
+      <main className="mobile-content queue-screen" id="queue">
+        <section className="student-hero">
+          <div>
+            <p className="eyebrow">6/18 FIELD TRIP • 2026</p>
+            <h1 className="page-title">คิวเพลง</h1>
+            <p className="subline">
+              <strong>{activeItems.length}</strong> เพลงในคิว <span aria-hidden="true">•</span> รอประมาณ <strong>{activeItems.length ? Math.max(1, Math.round(eta / 60)) : 0}</strong> นาที
+            </p>
           </div>
-        ) : (
-          <>
-            <h2 className="section-label">▮ NOW PLAYING</h2>
+          {profile && <div className="profile-chip"><span>YOU</span><b>{profile.nickname}</b><small>{formatSeatLabel(profile.seatNo)}</small></div>}
+        </section>
+
+        <section className="queue-main-grid">
+          <div className="queue-primary-column">
+            <div className="section-heading">
+              <div><span className="eq-icon" aria-hidden="true"><i/><i/><i/><i/></span><h2>NOW PLAYING</h2></div>
+              <span className={`live-state ${current ? "on" : ""}`}>{current ? "LIVE" : state?.tripStarted ? "WAITING" : "READY"}</span>
+            </div>
+
             {current ? (
-              <article className="now-card glass">
-                <div className="cover" style={{ backgroundImage: current.thumbnailUrl || current.coverUrlOriginal ? `url(${current.thumbnailUrl || current.coverUrlOriginal})` : demoCover(current.id) }} />
-                <div>
+              <article className="now-card glass premium-now-card">
+                <div className="now-art-wrap">
+                  <div className="cover" style={{ backgroundImage: current.thumbnailUrl || current.coverUrlOriginal ? `url(${current.thumbnailUrl || current.coverUrlOriginal})` : demoCover(current.id) }} />
+                  <span className="playing-bars" aria-hidden="true"><i/><i/><i/><i/></span>
+                </div>
+                <div className="now-copy">
                   <div className="track-title">{display(current)}</div>
                   <div className="track-artist">{current.artist}</div>
-                  <small className="queue-foot">
-                    {current.playbackType === "embed" ? "YOUTUBE • ONLINE" : current.requestedMode.toUpperCase()} • Requested by {current.requesterNickname ?? "Passenger"}{current.seatNo ? ` • ${formatSeatLabel(current.seatNo)}` : ""}
-                  </small>
+                  <div className="now-meta-row">
+                    <span className="source-badge">{current.playbackType === "embed" ? "YOUTUBE • ONLINE" : current.preparedMediaType === "video" ? "LOCAL • VIDEO" : "LOCAL • AUDIO"}</span>
+                    <span>ขอโดย {current.requesterNickname ?? "Passenger"}{current.seatNo ? ` • ${formatSeatLabel(current.seatNo)}` : ""}</span>
+                  </div>
                 </div>
+                <div className="now-progress-track" aria-hidden="true"><span /></div>
               </article>
             ) : (
-              <div className="glass queue-waiting-card">
-                <strong>{state?.tripStarted ? (pending.length ? "กำลังเตรียมเพลงถัดไป…" : "คิวว่างแล้ว 🎵") : "พร้อมออกเดินทาง"}</strong>
-                <span>{state?.tripStarted ? (pending.length ? "พร้อมเมื่อไร ระบบจะเล่นต่อให้อัตโนมัติ" : "รอเพลงใหม่จากเพื่อน ๆ") : "รอเริ่มเล่นเพลง"}</span>
+              <div className="glass queue-waiting-card premium-empty">
+                <span className="empty-orb">♫</span>
+                <div>
+                  <strong>{state?.tripStarted ? (pending.length ? "กำลังเตรียมเพลงถัดไป…" : "คิวว่างแล้ว") : "พร้อมออกเดินทาง"}</strong>
+                  <span>{state?.tripStarted ? (pending.length ? "เพลงพร้อมเมื่อไร ระบบจะเล่นต่อให้อัตโนมัติ" : "รอเพลงใหม่จากเพื่อน ๆ") : "ขอเพลงแรกแล้วเริ่มทริปได้เลย"}</span>
+                </div>
               </div>
             )}
 
-            {pending.length > 0 && (
-              <>
-                <h2 className="section-label">UP NEXT</h2>
-                <div className="queue-list">
-                  {pending.map((item, i) => (
-                    <article className={`queue-row ${profile && item.seatNo === profile.seatNo ? "mine" : ""}`} key={item.id}>
-                      <div className="queue-number">#{i + 1}</div>
+            <section className="request-panel glass request-composer" id="request">
+              <div className="composer-head">
+                <div><p className="eyebrow">REQUEST A TRACK</p><h2>อยากฟังเพลงอะไร?</h2></div>
+                <span className="request-limit">สูงสุด 2 เพลงรอ/คน</span>
+              </div>
+
+              <div className="mode-toggle premium-mode-toggle">
+                <button type="button" className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`} onClick={() => setRequestedMode("audio")}>
+                  <span className="mode-icon">♫</span><span><b>Audio</b><small>{isYouTubeInput ? "เตรียมเป็น MP3" : "เสียง"}</small></span>
+                </button>
+                <button type="button" className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`} onClick={() => setRequestedMode("video")}>
+                  <span className="mode-icon">▸</span><span><b>Video</b><small>{isYouTubeInput ? "เตรียมเป็น MP4" : "วิดีโอ"}</small></span>
+                </button>
+              </div>
+
+              {isYouTubeInput ? (
+                <div className="source-detected youtube"><b>YOUTUBE • LOCAL CACHE</b><span>Trip Music จะเตรียม {requestedMode === "audio" ? "MP3" : "MP4"} ลง Tab แล้วเล่นจากเครื่องโดยตรง</span></div>
+              ) : directAudioInput ? (
+                <div className="source-detected"><b>LOCAL AUDIO</b><span>พบลิงก์ไฟล์เสียงโดยตรง</span></div>
+              ) : directVideoInput ? (
+                <div className="source-detected"><b>LOCAL VIDEO</b><span>พบลิงก์ไฟล์วิดีโอโดยตรง</span></div>
+              ) : null}
+
+              <form onSubmit={addRequest} className="request-form">
+                <div className="url-input-wrap">
+                  <span className="url-icon" aria-hidden="true">↗</span>
+                  <input className="text-input" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="วางลิงก์ YouTube หรือ Direct Media" maxLength={500} inputMode="url" />
+                </div>
+                <button className="secondary-button request-submit" disabled={submitting || !sourceUrl.trim()}>{submitting ? "กำลังส่ง…" : "ขอเพลง"}<span aria-hidden="true">→</span></button>
+              </form>
+              {message && <p className="request-message" role="status">{message}</p>}
+              {latestFailed && (
+                <div className="request-failure" role="status">
+                  <div className="failure-icon">!</div>
+                  <div><b>เพลงล่าสุดเตรียมไม่สำเร็จ</b><span>{/unembeddable|embedding|youtube_error_(101|150)/i.test(`${latestFailed.metadataError ?? ""} ${latestFailed.mediaError ?? ""}`)
+                    ? "ระบบข้ามเพลงนี้แล้ว ลองส่งลิงก์อื่นได้ทันที"
+                    : /youtube_error_100/i.test(latestFailed.mediaError ?? "")
+                    ? "วิดีโอนี้ไม่พร้อมใช้งานแล้ว ขอเพลงอื่นได้ทันที"
+                    : "เพลงนี้ไม่กินโควตาคิวของคุณ คุณขอใหม่ได้ทันที"}</span></div>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <aside className="queue-secondary-column">
+            <div className="section-heading compact-heading"><div><span className="queue-lines" aria-hidden="true">≡</span><h2>UP NEXT</h2></div><span>{pending.length}</span></div>
+            {pending.length > 0 ? (
+              <div className="queue-list premium-queue-list">
+                {pending.map((item, i) => {
+                  const mine = Boolean(profile && item.seatNo === profile.seatNo);
+                  return (
+                    <article className={`queue-row ${mine ? "mine" : ""}`} key={item.id}>
+                      <div className="queue-number">{String(i + 1).padStart(2, "0")}</div>
                       <div className="cover sm" style={{ backgroundImage: item.thumbnailUrl || item.coverUrlOriginal ? `url(${item.thumbnailUrl || item.coverUrlOriginal})` : demoCover(item.id) }} />
                       <div className="queue-meta">
                         <div className="track-title">{display(item)}</div>
                         <div className="track-artist">{item.metadataStatus === "failed" ? "" : item.artist}</div>
-                        <div className="queue-foot">{profile && item.seatNo === profile.seatNo ? "☆ เพลงของคุณ" : `Requested by ${item.requesterNickname ?? "Passenger"}`}</div>
+                        <div className="queue-foot">{mine ? "★ เพลงของคุณ" : `ขอโดย ${item.requesterNickname ?? "Passenger"}`}</div>
                       </div>
-                      <span className="mode-badge">⚡ {item.playbackType === "embed" ? "YOUTUBE" : item.requestedMode.toUpperCase()}</span>
-                      <span className="duration">{item.durationSeconds ? `${Math.floor(item.durationSeconds / 60)}:${String(item.durationSeconds % 60).padStart(2, "0")}` : "--:--"}</span>
+                      <div className="queue-row-end">
+                        <span className="mode-badge">{item.playbackType === "embed" ? "YT" : item.requestedMode === "video" ? "VIDEO" : "AUDIO"}</span>
+                        <span className="duration">{item.durationSeconds ? `${Math.floor(item.durationSeconds / 60)}:${String(item.durationSeconds % 60).padStart(2, "0")}` : "--:--"}</span>
+                        <span className={`prep-state ${item.status}`}>{item.status === "ready" ? "READY" : item.status === "preparing" ? "PREPARING" : item.status === "waiting" ? "WAITING" : item.status.toUpperCase()}</span>
+                      </div>
                     </article>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        <section className="request-panel glass" id="request">
-          <p className="eyebrow">REQUEST A TRACK</p>
-          {isYouTubeInput ? (
-            <>
-              <div className="source-detected youtube"><b>⬇ YOUTUBE • LOCAL CACHE</b><span>เลือกว่าให้เตรียมเป็น MP3 หรือ MP4 แล้วเก็บชั่วคราวบน Tab</span></div>
-              <div className="mode-toggle">
-                <button type="button" className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`} onClick={() => setRequestedMode("audio")}>🎵 MP3 / Audio</button>
-                <button type="button" className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`} onClick={() => setRequestedMode("video")}>🎬 MP4 / Video</button>
+                  );
+                })}
               </div>
-            </>
-          ) : directAudioInput ? (
-            <div className="source-detected"><b>🎵 LOCAL AUDIO</b><span>ไฟล์เสียงจะถูกเตรียมไว้บนเครื่องเล่น</span></div>
-          ) : directVideoInput ? (
-            <div className="source-detected"><b>🎬 LOCAL VIDEO</b><span>ไฟล์วิดีโอจะเล่นเต็มจอบนรถ</span></div>
-          ) : (
-            <div className="mode-toggle">
-              <button type="button" className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`} onClick={() => setRequestedMode("audio")}>🎵 Audio</button>
-              <button type="button" className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`} onClick={() => setRequestedMode("video")}>🎬 Video</button>
-            </div>
-          )}
-          <form onSubmit={addRequest}>
-            <input className="text-input" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="วางลิงก์ YouTube หรือ Direct Media" maxLength={500} />
-            <button className="secondary-button" disabled={submitting}>{submitting ? "กำลังส่ง…" : "ขอเพลง"}</button>
-          </form>
-          {message && <p className="queue-foot" role="status">{message}</p>}
-          {latestFailed && (
-            <div className="request-failure" role="status">
-              <b>เพลงล่าสุดเล่นไม่ได้</b>
-              <span>{/unembeddable|embedding|youtube_error_(101|150)/i.test(`${latestFailed.metadataError ?? ""} ${latestFailed.mediaError ?? ""}`)
-                ? "เจ้าของวิดีโอไม่อนุญาตให้เล่นแบบฝังบนจอรถ — ขอเพลงอื่นได้ทันที"
-                : /youtube_error_100/i.test(latestFailed.mediaError ?? "")
-                ? "วิดีโอนี้ไม่พร้อมใช้งานแล้ว — ขอเพลงอื่นได้ทันที"
-                : "ระบบข้ามเพลงนี้แล้วและไม่กินโควตาคิวของคุณ"}</span>
-            </div>
-          )}
+            ) : (
+              <div className="mini-empty glass"><span>✓</span><b>คิวถัดไปว่าง</b><small>เพลงใหม่จะขึ้นตรงนี้</small></div>
+            )}
+          </aside>
         </section>
 
-
         {recentlyPlayed.length > 0 && (
-          <>
-            <h2 className="section-label">RECENTLY PLAYED</h2>
-            <div className="recent-grid recent-scroller">
-              {recentlyPlayed.slice(0, 3).map(item => (
+          <section className="recent-section">
+            <div className="section-heading compact-heading"><div><span className="history-symbol">↺</span><h2>RECENTLY PLAYED</h2></div><a href="/history">ดูทั้งหมด →</a></div>
+            <div className="recent-scroller">
+              {recentlyPlayed.slice(0, 6).map(item => (
                 <article className="recent-card" key={item.id}>
                   <div className="cover" style={{ backgroundImage: item.thumbnailUrl || item.coverUrlOriginal ? `url(${item.thumbnailUrl || item.coverUrlOriginal})` : demoCover(item.id) }} />
                   <div className="track-title">{display(item)}</div>
@@ -358,10 +383,9 @@ export default function QueuePage() {
                 </article>
               ))}
             </div>
-          </>
+          </section>
         )}
       </main>
     </div>
   );
 }
-

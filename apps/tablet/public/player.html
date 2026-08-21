@@ -405,6 +405,37 @@ body {
   background: rgba(239, 68, 68, 0.95);
 }
 </style>
+
+<style id="trip-music-final-ui">
+:root{
+  --bg:#080b10;--panel:rgba(20,25,32,.82);--text:#f4f7f2;--muted:#a7b3a5;--green:#53e076;--green2:#72fe8f;--border:rgba(210,230,212,.13);--artwork:none;
+}
+body{font-family:"Be Vietnam Pro","Noto Sans Thai",system-ui,-apple-system,sans-serif;background:#080b10;isolation:isolate}
+body::before{content:"";position:fixed;inset:-8%;z-index:-2;background-image:var(--artwork);background-size:cover;background-position:center;filter:blur(72px) saturate(1.15);transform:scale(1.12);opacity:.22;transition:background-image .5s ease,opacity .5s ease}
+body::after{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(110deg,rgba(7,10,14,.78),rgba(7,10,14,.93) 60%,rgba(7,10,14,.98));pointer-events:none}
+.youtube-mode::before,.video-mode::before{opacity:0}.youtube-mode::after,.video-mode::after{background:linear-gradient(180deg,rgba(0,0,0,.35),transparent 23%,transparent 68%,rgba(0,0,0,.72))}
+.video{object-fit:contain!important;background:#000}.youtube-container{background:#000}
+.shell{max-width:1540px;padding:clamp(24px,4vh,48px) clamp(30px,4vw,64px);grid-template-columns:minmax(0,1.08fr) minmax(370px,.72fr);gap:clamp(36px,5vw,76px)}
+.main-pane{min-width:0}.hud-top{min-width:0}.hud-track-meta{min-width:0}.cover{width:min(36vw,47vh,500px);border-radius:34px;box-shadow:0 32px 90px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.08);position:relative;overflow:hidden}.mode-pill{margin:0 0 15px;padding:7px 13px;border-color:rgba(83,224,118,.24);background:rgba(83,224,118,.09);font-size:11px}.title{font-size:clamp(42px,5vw,76px);line-height:1.01;letter-spacing:-.055em;max-width:100%;margin-bottom:9px}.title.long-title{font-size:clamp(28px,3.5vw,50px);line-height:1.08}.artist{font-size:clamp(18px,2.1vw,30px);margin-bottom:16px;color:#b9c4b7}.progress-wrap{margin-top:18px}.progress{height:6px;background:rgba(255,255,255,.12)}.time-label{font-size:13px}.controls{margin-top:20px}.button{height:52px;min-width:52px;border-radius:26px;background:rgba(39,45,55,.78);border:1px solid rgba(255,255,255,.06);box-shadow:none}.button.primary{background:var(--green);box-shadow:0 10px 30px rgba(83,224,118,.18)}
+.glass{border-radius:30px;padding:clamp(22px,2.7vw,34px);background:linear-gradient(145deg,rgba(17,21,27,.79),rgba(6,8,12,.72));border-color:var(--border);box-shadow:0 30px 90px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.03)}.stats{gap:16px}.number{font-size:clamp(38px,4vw,58px);letter-spacing:-.04em}.label{font-size:10px}.next{margin-top:25px}.row{padding:10px;border-radius:17px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.025)}.row b{font-size:14px}.row span{font-size:11px}.mini{width:48px;height:48px;border-radius:13px}.empty-note{padding:26px 12px;text-align:center;color:var(--muted);font-size:12px;border:1px dashed rgba(255,255,255,.08);border-radius:17px;margin-top:10px}
+.status-pill{border:1px solid var(--border);background:rgba(11,14,19,.6);backdrop-filter:blur(18px);font-size:10px;padding:7px 12px;border-radius:999px;color:#cbd4c9}.next-pill{background:rgba(18,23,29,.78);border:1px solid var(--border);backdrop-filter:blur(20px);box-shadow:0 16px 50px rgba(0,0,0,.24)}
+
+/* Cinema: information appears briefly, then the video is truly clean. */
+.video-mode .shell,.youtube-mode .shell{position:fixed;inset:0;max-width:none;width:100%;height:100%;padding:clamp(22px,3vw,42px);display:flex!important;z-index:10;background:linear-gradient(180deg,rgba(0,0,0,.48),transparent 24%,transparent 68%,rgba(0,0,0,.72));pointer-events:none}
+.video-mode .main-pane,.youtube-mode .main-pane{display:flex;flex-direction:column;justify-content:space-between;width:100%;height:100%}.video-mode .hud-top,.youtube-mode .hud-top{display:flex;align-items:flex-start;justify-content:space-between;width:100%;pointer-events:none}.video-mode .hud-track-meta,.youtube-mode .hud-track-meta{display:grid;grid-template-columns:64px minmax(0,1fr);grid-template-rows:auto auto auto;column-gap:14px;align-items:center;max-width:min(620px,68vw);padding:11px 16px 11px 11px;border-radius:24px;background:rgba(12,16,21,.66);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(22px) saturate(120%);box-shadow:0 14px 48px rgba(0,0,0,.28);pointer-events:auto}.video-mode .cover,.youtube-mode .cover{display:block!important;grid-column:1;grid-row:1/4;width:64px;height:64px;margin:0;border-radius:18px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}.video-mode .mode-pill,.youtube-mode .mode-pill{grid-column:2;grid-row:1;margin:0 0 1px;background:transparent;border:0;padding:0;color:var(--green);font-size:8px}.video-mode .mode-pill .live-dot,.youtube-mode .mode-pill .live-dot{width:5px;height:5px}.video-mode .title,.youtube-mode .title{grid-column:2;grid-row:2;font-size:clamp(15px,1.8vw,23px)!important;line-height:1.12!important;letter-spacing:-.025em!important;margin:0!important;white-space:nowrap;display:block!important;overflow:hidden;text-overflow:ellipsis;max-width:100%}.video-mode .artist,.youtube-mode .artist{grid-column:2;grid-row:3;font-size:clamp(10px,1.1vw,14px)!important;line-height:1.25;margin:2px 0 0!important;white-space:nowrap;display:block!important;overflow:hidden;text-overflow:ellipsis;color:#c5cec3}.video-mode .status-pill,.youtube-mode .status-pill{display:flex!important;pointer-events:auto;background:rgba(12,16,21,.56);color:#d9dfd7}
+.video-mode .hud-bottom,.youtube-mode .hud-bottom{width:100%;padding:0 4px;pointer-events:auto}.video-mode .progress-wrap,.youtube-mode .progress-wrap{margin:0 0 11px}.video-mode .progress,.youtube-mode .progress{height:5px;background:rgba(255,255,255,.16)}.video-mode .time-label,.youtube-mode .time-label{font-size:11px;color:#d7ddd6;margin-top:7px}.video-mode .bottom-row,.youtube-mode .bottom-row{display:flex;align-items:center;justify-content:space-between}.video-mode .controls,.youtube-mode .controls{gap:8px}.video-mode .button,.youtube-mode .button{width:44px;height:44px;min-width:44px;background:rgba(14,18,24,.68);border:1px solid rgba(255,255,255,.12);font-size:14px}.video-mode .next-pill,.youtube-mode .next-pill{min-height:55px;max-width:min(380px,44vw);padding:8px 13px;border-radius:20px;gap:10px}.video-mode .next-pill .mini,.youtube-mode .next-pill .mini{width:38px;height:38px;border-radius:11px}.video-mode .next-pill b,.youtube-mode .next-pill b{font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.video-mode .next-pill-info,.youtube-mode .next-pill-info{min-width:0}
+.video-mode.idle .hud-track-meta,.youtube-mode.idle .hud-track-meta,.video-mode.idle .status-pill,.youtube-mode.idle .status-pill{opacity:0!important;transform:translateY(-9px)!important;pointer-events:none!important}.video-mode.idle .hud-bottom,.youtube-mode.idle .hud-bottom{opacity:0!important;transform:translateY(9px)!important;pointer-events:none!important}.video-mode.idle .shell,.youtube-mode.idle .shell{background:transparent!important}
+
+/* Startup and active-trip waiting states: no fake data, only real player state. */
+.startup-mode::before{opacity:.12;background-image:none}.startup-mode::after{background:radial-gradient(circle at 50% 43%,rgba(83,224,118,.09),transparent 27rem),linear-gradient(180deg,#0d1117,#07090d)}.startup-mode .shell{display:flex;align-items:center;justify-content:center;max-width:none;text-align:center}.startup-mode .main-pane{width:min(900px,90vw);display:flex;align-items:center;justify-content:center}.startup-mode .hud-top{display:block}.startup-mode .hud-track-meta{display:flex;flex-direction:column;align-items:center}.startup-mode .cover,.startup-mode .glass,.startup-mode .status-pill,.startup-mode .progress-wrap,.startup-mode .next-pill,.startup-mode #pause,.startup-mode #skip{display:none!important}.startup-mode .mode-pill{order:1;background:transparent;border:0;font-size:12px;letter-spacing:.2em;margin-bottom:16px}.startup-mode .title{order:2;font-size:clamp(54px,9vw,128px);line-height:.88;letter-spacing:-.075em;margin:0;max-width:100%;background:linear-gradient(180deg,#fff,#c8d1c6);-webkit-background-clip:text;background-clip:text;color:transparent}.startup-mode .artist{order:3;font-size:clamp(15px,2vw,24px);letter-spacing:.13em;text-transform:uppercase;margin-top:20px;color:#9faa9c}.startup-mode .hud-bottom{position:absolute;left:50%;bottom:11vh;transform:translateX(-50%);width:auto}.startup-mode .bottom-row{justify-content:center}.startup-mode #start{display:flex!important;min-width:190px;height:58px;align-items:center;justify-content:center;font-size:15px;letter-spacing:.04em}
+.waiting-mode:not(.video-mode):not(.youtube-mode) .cover{opacity:.3;filter:saturate(.4)}
+
+.autoplay-overlay{background:rgba(4,6,9,.86);backdrop-filter:blur(24px)}.autoplay-content{border-radius:28px;border-color:rgba(83,224,118,.26);background:rgba(19,24,31,.88);box-shadow:0 28px 90px rgba(0,0,0,.5)}.error-banner{top:22px;border-radius:18px;background:rgba(99,24,24,.92);border:1px solid rgba(255,143,136,.3);box-shadow:0 18px 60px rgba(0,0,0,.38);font-size:13px}
+
+@media(max-width:900px){.shell{grid-template-columns:1fr .82fr;gap:24px;padding:22px}.cover{width:min(36vw,44vh,340px)}.glass{padding:18px}.row:nth-child(n+4){display:none}.video-mode .hud-track-meta,.youtube-mode .hud-track-meta{max-width:75vw}}
+@media(max-width:660px){.shell{grid-template-columns:1fr;height:auto;min-height:100dvh;overflow:auto}.glass{display:none}.cover{width:min(68vw,38vh,300px);margin:0 auto 18px}.title{text-align:center;font-size:clamp(30px,9vw,48px)}.artist{text-align:center}.mode-pill{margin-left:auto;margin-right:auto}.controls{justify-content:center}.video-mode .hud-track-meta,.youtube-mode .hud-track-meta{grid-template-columns:50px minmax(0,1fr);max-width:82vw;padding:8px 11px 8px 8px;border-radius:18px}.video-mode .cover,.youtube-mode .cover{width:50px;height:50px;border-radius:13px}.video-mode .status-pill,.youtube-mode .status-pill{display:none!important}.video-mode .next-pill,.youtube-mode .next-pill{max-width:55vw}.startup-mode .shell{overflow:hidden}.startup-mode .title{text-align:center}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
 <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
@@ -743,6 +774,8 @@ async function sync(data){
     showHudFor(5200);
   }
   const isTripStarted = Boolean(state.tripStarted || state.currentQueueItemId || state.playbackStatus==='playing' || state.playbackStatus==='paused');
+  document.body.classList.toggle('startup-mode', !isTripStarted && !current);
+  document.body.classList.toggle('waiting-mode', Boolean(isTripStarted && !current));
 
   // De-emphasize / hide START TRIP button once trip has started
   if(isTripStarted){
@@ -760,6 +793,8 @@ async function sync(data){
     const requester=current.requesterNickname||'Passenger';
     const isYt = current.playbackType==='embed' && current.embedProvider==='youtube';
     const isVid = current.preparedMediaType==='video';
+    const artworkSource = current.localCoverKey ? `/covers/${encodeURIComponent(current.localCoverKey)}` : (current.thumbnailUrl || current.coverUrlOriginal || '');
+    document.body.style.setProperty('--artwork', artworkSource ? `url("${String(artworkSource).replace(/"/g,'%22')}")` : 'none');
     
     if(isYt){
       $('#mode-text').textContent='▶ YOUTUBE • ONLINE';
@@ -779,6 +814,7 @@ async function sync(data){
     $('#time-curr').textContent = formatTime(pos);
     $('#time-total').textContent = formatTime(dur);
   } else {
+    document.body.style.setProperty('--artwork','none');
     const titleEl=$('#title');
     const preparing=queue.find(item=>['waiting','preparing'].includes(item.status));
     if(state.tripStarted && preparing){
@@ -790,9 +826,9 @@ async function sync(data){
       $('#mode-text').textContent='♫ TRIP MUSIC';
       $('#artist').textContent='รอเพลงใหม่จากเพื่อน ๆ • เพลงใหม่พร้อมเมื่อไรจะเริ่มเอง';
     }else{
-      titleEl.textContent='พร้อมออกเดินทาง';
-      $('#mode-text').textContent='♫ TRIP MUSIC';
-      $('#artist').textContent='รอเพลงแรกของทริป…';
+      titleEl.textContent='TRIP MUSIC';
+      $('#mode-text').textContent='6/18 FIELD TRIP • 2026';
+      $('#artist').textContent='พร้อมออกเดินทาง • แตะ START TRIP เมื่อพร้อม';
     }
     titleEl.classList.remove('long-title');
     $('#bar').style.width='0%';
