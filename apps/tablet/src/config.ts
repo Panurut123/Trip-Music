@@ -16,6 +16,9 @@ export const tabletConfig = {
   performanceMode: (process.env.PERFORMANCE_MODE === "lite" ? "lite" : "balanced") as "lite" | "balanced",
   adminPin: process.env.TABLET_ADMIN_PIN ?? process.env.ADMIN_PIN ?? "",
   youtubeApiKey: process.env.YOUTUBE_API_KEY ?? "",
+  youtubeLocalDownload: bool(process.env.YOUTUBE_LOCAL_DOWNLOAD, true),
+  youtubeEmbedFallback: bool(process.env.YOUTUBE_EMBED_FALLBACK, true),
+  mediaPrepareTimeoutMs: Number(process.env.MEDIA_PREPARE_TIMEOUT_MS ?? 5 * 60 * 1000),
   spotifyClientId: process.env.SPOTIFY_CLIENT_ID ?? "",
   spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET ?? "",
   maxAudioBytes: Number(process.env.MAX_AUDIO_BYTES ?? 100 * 1024 * 1024),
@@ -23,5 +26,8 @@ export const tabletConfig = {
   maxCoverBytes: Number(process.env.MAX_COVER_BYTES ?? 5 * 1024 * 1024),
   downloadTimeoutMs: Number(process.env.DOWNLOAD_TIMEOUT_MS ?? 30_000),
   unknownDurationEstimateSeconds: Number(process.env.UNKNOWN_DURATION_ESTIMATE_SECONDS ?? 240),
+  cacheMaxBytes: Number(process.env.CACHE_MAX_BYTES ?? 8 * 1024 * 1024 * 1024),
+  cacheRetentionMinutes: Number(process.env.CACHE_RETENTION_MINUTES ?? 30),
+  cacheCleanupIntervalMs: Number(process.env.CACHE_CLEANUP_INTERVAL_MS ?? 5 * 60 * 1000),
   allowLocalMediaTest: isLocalMediaTestEnabled(),
 };

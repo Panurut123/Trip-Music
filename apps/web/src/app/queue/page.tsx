@@ -22,7 +22,7 @@ export default function QueuePage() {
   const isYouTubeInput = /(?:youtube\.com|youtu\.be)/i.test(sourceUrl);
   const directAudioInput = /\.(?:mp3|m4a|wav)(?:[?#]|$)/i.test(sourceUrl) && !isYouTubeInput;
   const directVideoInput = /\.(?:mp4|webm)(?:[?#]|$)/i.test(sourceUrl) && !isYouTubeInput;
-  const effectiveMode: "audio" | "video" = isYouTubeInput ? "video" : directAudioInput ? "audio" : directVideoInput ? "video" : requestedMode;
+  const effectiveMode: "audio" | "video" = directAudioInput ? "audio" : directVideoInput ? "video" : requestedMode;
   const activeItems = items.filter(i => ["waiting", "preparing", "ready", "playing"].includes(i.status));
   const current = items.find(i => i.id === state?.currentQueueItemId) ?? items.find(i => i.status === "playing") ?? null;
   const pending = activeItems.filter(i => i.id !== current?.id && ["waiting", "preparing", "ready"].includes(i.status));
@@ -210,7 +210,7 @@ export default function QueuePage() {
 
       if (enqueued) {
         const isYt = /youtube\.com|youtu\.be/.test(sourceUrl);
-        setMessage(isYt ? "เพิ่มเพลงเข้าคิวแล้ว (YouTube • Online)" : "เพิ่มเพลงเข้าคิวแล้ว");
+        setMessage(isYt ? `เพิ่มเพลงเข้าคิวแล้ว • กำลังเตรียม ${effectiveMode === "audio" ? "MP3" : "MP4"} บนเครื่องเล่น` : "เพิ่มเพลงเข้าคิวแล้ว");
         setSourceUrl("");
       }
     } catch (error) {
@@ -311,7 +311,13 @@ export default function QueuePage() {
         <section className="request-panel glass" id="request">
           <p className="eyebrow">REQUEST A TRACK</p>
           {isYouTubeInput ? (
-            <div className="source-detected youtube"><b>▶ YOUTUBE • ONLINE VIDEO</b><span>ลิงก์ YouTube จะเล่นเป็นวิดีโอออนไลน์บนจอรถ</span></div>
+            <>
+              <div className="source-detected youtube"><b>⬇ YOUTUBE • LOCAL CACHE</b><span>เลือกว่าให้เตรียมเป็น MP3 หรือ MP4 แล้วเก็บชั่วคราวบน Tab</span></div>
+              <div className="mode-toggle">
+                <button type="button" className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`} onClick={() => setRequestedMode("audio")}>🎵 MP3 / Audio</button>
+                <button type="button" className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`} onClick={() => setRequestedMode("video")}>🎬 MP4 / Video</button>
+              </div>
+            </>
           ) : directAudioInput ? (
             <div className="source-detected"><b>🎵 LOCAL AUDIO</b><span>ไฟล์เสียงจะถูกเตรียมไว้บนเครื่องเล่น</span></div>
           ) : directVideoInput ? (

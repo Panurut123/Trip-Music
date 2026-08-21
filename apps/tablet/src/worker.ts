@@ -16,6 +16,7 @@ import {
   MockProvider,
   SpotifyMetadataResolver,
   YouTubeEmbedProvider,
+  YouTubeLocalMediaProvider,
   YouTubeMetadataResolver,
   cacheCover,
   type MediaProvider,
@@ -51,6 +52,7 @@ export class TripWorker {
   private supabase: SupabaseClient | null = null;
   private pollTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
+  private cleanupTimer?: NodeJS.Timeout;
   private preparationPromise: Promise<void> | null = null;
   private autoStartPromise: Promise<QueueItem | null> | null = null;
 
@@ -64,7 +66,7 @@ export class TripWorker {
   constructor(options: WorkerOptions = {}) {
     this.cache = options.cache ?? new CacheStore(tabletConfig.dataDir);
     const mock = new MockProvider();
-    const youtube = new YouTubeEmbedProvider();
+    const youtube = tabletConfig.youtubeLocalDownload ? new YouTubeLocalMediaProvider() : new YouTubeEmbedProvider();
     const direct = new DirectMediaProvider();
     this.resolvers = options.resolvers ?? [mock, new YouTubeMetadataResolver(), new SpotifyMetadataResolver(), direct];
     this.providers = options.providers ?? [mock, youtube, direct];
@@ -97,8 +99,36 @@ export class TripWorker {
     }
     this.heartbeatTimer = setInterval(() => void this.heartbeat(), 10_000);
     this.pollTimer = setInterval(() => void this.reconcile(), 15_000);
+    this.cleanupTimer = setInterval(() => void this.cleanupCache(), tabletConfig.cacheCleanupIntervalMs);
+    await this.cleanupCache();
     this.touch();
   }
+
+  async cleanupCache() {
+    const protectedIds = this.items
+      .filter((item) => item.status === QueueStatus.WAITING || item.status === QueueStatus.PREPARING || item.status === QueueStatus.READY || item.status === QueueStatus.PLAYING)
+      .map((item) => item.id);
+    const result = await this.cache.cleanup({
+      protectedItemIds: protectedIds,
+      retentionMs: Math.max(0, tabletConfig.cacheRetentionMinutes) * 60_000,
+      maxBytes: Math.max(64 * 1024 * 1024, tabletConfig.cacheMaxBytes),
+    });
+    this.state.cachedTrackCount = result.entries;
+    this.touch();
+    return result;
+  }
+
+  cacheStats() { return this.cache.stats(); }
+
+  async purgeFinishedCache() {
+    const protectedIds = this.items
+      .filter((item) => item.status === QueueStatus.WAITING || item.status === QueueStatus.PREPARING || item.status === QueueStatus.READY || item.status === QueueStatus.PLAYING)
+      .map((item) => item.id);
+    const result = await this.cache.cleanup({ protectedItemIds: protectedIds, retentionMs: 0, maxBytes: tabletConfig.cacheMaxBytes });
+    this.touch();
+    return result;
+  }
+
 
   hasSupabase(): boolean {
     return Boolean(this.supabase);
@@ -355,15 +385,17 @@ export class TripWorker {
     this.clearCurrentForTransition();
     this.touch();
 
+
     const next = await this.maybeStartNext("ended");
     if (next) {
       void this.replenishBuffer();
+      void this.cleanupCache();
       return next;
     }
     void this.replenishBuffer().then(() => this.maybeStartNext("late-ready-after-ended"));
+    void this.cleanupCache();
     return null;
   }
-
 
   pause() {
     if (this.state.currentQueueItemId) this.state.playbackStatus = "paused";
@@ -410,6 +442,7 @@ export class TripWorker {
     await this.startItem(next);
     this.touch();
     void this.replenishBuffer();
+    void this.cleanupCache();
     return next;
   }
 
@@ -430,6 +463,7 @@ export class TripWorker {
     this.touch();
     const next = await this.maybeStartNext("playback-error");
     if (!next) void this.replenishBuffer().then(() => this.maybeStartNext("late-ready-after-error"));
+    void this.cleanupCache();
     return next;
   }
 
@@ -511,6 +545,6 @@ export class TripWorker {
 
   getQueue() { return [...this.items].sort((a, b) => a.sortOrder - b.sortOrder); }
 
-  async shutdown() { if (this.pollTimer) clearInterval(this.pollTimer); if (this.heartbeatTimer) clearInterval(this.heartbeatTimer); }
+  async shutdown() { if (this.pollTimer) clearInterval(this.pollTimer); if (this.heartbeatTimer) clearInterval(this.heartbeatTimer); if (this.cleanupTimer) clearInterval(this.cleanupTimer); }
 }
 

@@ -75,7 +75,7 @@ export class YouTubeMetadataResolver implements MetadataResolver {
           if (row?.snippet) {
             if (row.liveStreamingDetails) throw new Error("youtube_livestream_unsupported");
             if (row.status?.privacyStatus === "private" || row.status?.uploadStatus === "deleted" || row.status?.uploadStatus === "rejected") throw new Error("youtube_unavailable");
-            if (row.status && row.status.embeddable === false) throw new Error("youtube_unembeddable");
+            if (row.status && row.status.embeddable === false && !tabletConfig.youtubeLocalDownload) throw new Error("youtube_unembeddable");
             const t = row.snippet.thumbnails ?? {};
             const thumbnail = ["maxres", "standard", "high", "medium", "default"].map((k) => t[k]?.url).find(Boolean) ?? null;
             return {
@@ -155,6 +155,49 @@ export class YouTubeMetadataResolver implements MetadataResolver {
 
 
 
+
+
+export class YouTubeLocalMediaProvider implements MediaProvider {
+  canHandle(url:string){ return tabletConfig.youtubeLocalDownload && Boolean(extractYouTubeId(url)); }
+
+  private async prepare(item:QueueItem, cache:CacheStore, target:"audio"|"video"):Promise<PreparedMedia>{
+    const id=extractYouTubeId(item.sourceUrl);
+    if(!id) throw new Error("Invalid YouTube URL");
+    const safeId=String(item.id).replace(/[^a-zA-Z0-9._-]/g,"_");
+    const outputTemplate=path.join(cache.mediaDir,`${safeId}.%(ext)s`);
+    for(const name of await fsp.readdir(cache.mediaDir).catch(()=>[] as string[])){
+      if(name.startsWith(`${safeId}.`) || name.startsWith(`${safeId}.part`)) await fsp.rm(path.join(cache.mediaDir,name),{force:true});
+    }
+    const common=["--no-playlist","--no-progress","--newline","--force-overwrites","--socket-timeout","20","--retries","3","--fragment-retries","3","--output",outputTemplate,"--print","after_move:filepath"];
+    const args=target==="audio"
+      ? [...common,"--extract-audio","--audio-format","mp3","--audio-quality","5","--max-filesize",String(tabletConfig.maxAudioBytes),item.sourceUrl]
+      : [...common,"--format","bestvideo[height<=720][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]","--merge-output-format","mp4","--max-filesize",String(tabletConfig.maxVideoBytes),item.sourceUrl];
+    try{
+      const {stdout}=await execFileAsync("yt-dlp",args,{timeout:tabletConfig.mediaPrepareTimeoutMs,maxBuffer:2*1024*1024});
+      const candidates=stdout.split(/\r?\n/).map(v=>v.trim()).filter(Boolean).reverse();
+      let finalPath=candidates.find(v=>path.resolve(v).startsWith(path.resolve(cache.mediaDir)+path.sep) && fs.existsSync(v));
+      if(!finalPath){
+        const files=(await fsp.readdir(cache.mediaDir)).filter(v=>v.startsWith(`${safeId}.`)&&!v.endsWith(".part"));
+        finalPath=files.length?path.join(cache.mediaDir,files[0]):undefined;
+      }
+      if(!finalPath) throw new Error("yt_dlp_no_output");
+      const key=path.basename(finalPath);
+      const stat=await fsp.stat(finalPath);
+      const max=target==="audio"?tabletConfig.maxAudioBytes:tabletConfig.maxVideoBytes;
+      if(stat.size>max){await fsp.rm(finalPath,{force:true});throw new Error("download_exceeds_limit");}
+      const probed=await probeDurationSeconds(finalPath);
+      if(probed) item.durationSeconds=probed;
+      return {playbackType:"local",mediaKey:key,mediaType:target};
+    }catch(error){
+      for(const name of await fsp.readdir(cache.mediaDir).catch(()=>[] as string[])) if(name.startsWith(`${safeId}.part`)) await fsp.rm(path.join(cache.mediaDir,name),{force:true});
+      if(target==="video" && tabletConfig.youtubeEmbedFallback) return {playbackType:"embed",embedProvider:"youtube",embedId:id,mediaType:"video"};
+      const message=error instanceof Error?error.message:"youtube_download_failed";
+      throw new Error(`youtube_download_failed:${message}`);
+    }
+  }
+  prepareAudio(item:QueueItem,cache:CacheStore){return this.prepare(item,cache,"audio");}
+  prepareVideo(item:QueueItem,cache:CacheStore){return this.prepare(item,cache,"video");}
+}
 
 export class YouTubeEmbedProvider implements MediaProvider {
   canHandle(url: string) { return Boolean(extractYouTubeId(url)); }

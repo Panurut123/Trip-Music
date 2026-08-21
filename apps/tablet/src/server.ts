@@ -74,6 +74,9 @@ export function createServer(worker: TripWorker, options: { displayToken?: strin
   app.get("/api/state", (_req, res) => res.json(worker.state));
   app.get("/api/queue", (_req, res) => res.json(worker.getQueue()));
   app.get("/api/network", (_req, res) => res.json({ addresses: networkAddresses(), port: tabletConfig.port, playerUrls: networkAddresses().map((ip) => `http://${ip}:${tabletConfig.port}/player`) }));
+  app.get("/api/cache", displaySession, async (_req, res) => res.json({ ...(await worker.cacheStats()), maxBytes: tabletConfig.cacheMaxBytes, retentionMinutes: tabletConfig.cacheRetentionMinutes }));
+  app.post("/api/cache/cleanup", displaySession, async (_req, res) => res.json(await worker.cleanupCache()));
+  app.post("/api/cache/purge-finished", displaySession, async (_req, res) => res.json(await worker.purgeFinishedCache()));
   app.get("/events", (req, res) => { res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" }); res.flushHeaders(); clients.add(res); res.write(`data: ${JSON.stringify({ state: worker.state, queue: worker.getQueue() })}\n\n`); req.on("close", () => clients.delete(res)); });
   const queueRequestGuard: express.RequestHandler = (req, res, next) => {
     // Public student requests belong on the Supabase-authenticated web flow.

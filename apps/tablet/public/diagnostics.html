@@ -107,7 +107,7 @@ h1 { font-size: clamp(24px, 4vw, 36px); color: var(--green); margin-bottom: 24px
         <span class="val" id="chk-buffer">…</span>
       </div>
       <div class="item">
-        <span class="label">Cached Audio Files</span>
+        <span class="label">Local Media Cache</span>
         <span class="val" id="chk-cache">…</span>
       </div>
     </div>
@@ -126,6 +126,7 @@ h1 { font-size: clamp(24px, 4vw, 36px); color: var(--green); margin-bottom: 24px
     <button class="button primary" onclick="location.href='/player'">▶ OPEN BUS DISPLAY</button>
     <button class="button" id="btn-tone">TEST AUDIO TONE</button>
     <button class="button" onclick="loadDiagnostics()">🔄 REFRESH</button>
+    <button class="button" id="btn-purge">🧹 DELETE PLAYED CACHE</button>
   </div>
   <audio id="audio" controls style="display:none;margin-top:15px;width:100%"></audio>
 </main>
@@ -150,7 +151,7 @@ async function loadDiagnostics(){
     iEl.className = 'val ' + (h.internetOnline ? 'ok' : 'bad');
 
     document.getElementById('chk-buffer').textContent = Math.ceil((h.bufferSeconds || 0) / 60) + ' min';
-    document.getElementById('chk-cache').textContent = (h.cache || 0) + ' tracks';
+    try { const c = await fetch('/api/cache').then(r=>r.json()); document.getElementById('chk-cache').textContent = (c.entries || 0) + ' tracks • ' + ((c.totalBytes || 0)/1024/1024).toFixed(0) + ' MB / ' + ((c.maxBytes || 0)/1024/1024/1024).toFixed(1) + ' GB'; } catch { document.getElementById('chk-cache').textContent = (h.cache || 0) + ' tracks'; }
 
     const ips = (h.localAddresses && h.localAddresses.length > 0) ? h.localAddresses : ['127.0.0.1'];
     document.getElementById('chk-ip').textContent = ips.join(', ');
@@ -162,6 +163,11 @@ async function loadDiagnostics(){
     document.getElementById('chk-server').className = 'val bad';
   }
 }
+
+document.getElementById('btn-purge').onclick = async () => {
+  const b = document.getElementById('btn-purge'); b.disabled = true; b.textContent = 'กำลังลบ…';
+  try { await fetch('/api/cache/purge-finished', {method:'POST'}); await loadDiagnostics(); } finally { b.disabled = false; b.textContent = '🧹 DELETE PLAYED CACHE'; }
+};
 
 document.getElementById('btn-tone').onclick = () => {
   const a = document.getElementById('audio');

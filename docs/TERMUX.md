@@ -6,6 +6,9 @@
 pkg update && pkg upgrade
 pkg install nodejs-lts git
 termux-wake-lock
+
+# Required for local YouTube MP3/MP4 preparation
+bash scripts/setup-termux-media.sh
 ```
 
 2. Copy the private repository to the tablet. Avoid putting secrets in screenshots or shared folders.
@@ -30,6 +33,12 @@ MAX_PREPARED_TRACKS=12
 MAX_PENDING_PER_USER=2
 ENABLE_VIDEO=true
 PERFORMANCE_MODE=balanced
+YOUTUBE_LOCAL_DOWNLOAD=true
+YOUTUBE_EMBED_FALLBACK=true
+MEDIA_PREPARE_TIMEOUT_MS=300000
+CACHE_MAX_BYTES=8589934592
+CACHE_RETENTION_MINUTES=30
+CACHE_CLEANUP_INTERVAL_MS=300000
 ```
 
 4. Start the local server:
@@ -69,3 +78,15 @@ pm2 restart trip-music-tablet
 pm2 stop trip-music-tablet
 ```
 
+
+## Local media cache
+
+YouTube requests can be prepared on the Tab as local MP3 (Audio mode) or local MP4 (Video mode). Prepared files live under `apps/tablet/data/media` and are served to the bus display through `/media/...` with HTTP Range support.
+
+The cache automatically protects the current/queued tracks, removes completed tracks after `CACHE_RETENTION_MINUTES`, and evicts the oldest completed items if the cache exceeds `CACHE_MAX_BYTES`. Stale partial downloads are also cleaned up. `/diagnostics` shows cache size and has **DELETE PLAYED CACHE** for a manual purge that never deletes active/queued media.
+
+Keep `yt-dlp` current before the trip:
+
+```bash
+python -m pip install -U "yt-dlp[default]"
+```
