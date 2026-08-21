@@ -268,6 +268,11 @@ export class TripWorker {
         item.readyAt = now();
         item.errorMessage = null;
         await this.persist(item);
+
+        if (this.state.tripStarted && (!this.state.currentQueueItemId || this.state.playbackStatus === "idle")) {
+          await this.startItem(item);
+        }
+
       } catch (error) {
         const message = error instanceof Error ? error.message : "Preparation failed";
         if (item.metadataStatus === "resolving") {
@@ -284,13 +289,17 @@ export class TripWorker {
   current() { return this.items.find((item) => item.id === this.state.currentQueueItemId) ?? null; }
 
   async startTrip() {
-    const next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
-    if (!next) return null;
-    await this.startItem(next);
     this.state.tripStarted = true;
+    let next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    if (!next) {
+      await this.replenishBuffer();
+      next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    }
+    if (next) {
+      await this.startItem(next);
+    }
     this.touch();
-    void this.replenishBuffer();
-    return next;
+    return next ?? null;
   }
 
   private async startItem(item: QueueItem) {
@@ -307,21 +316,36 @@ export class TripWorker {
       current.finishedAt = now();
       await this.persist(current);
     }
-    const next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    this.state.currentQueueItemId = null;
+    this.state.playbackPositionSeconds = 0;
+    this.state.playbackStartedAt = null;
+
+    let next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    if (!next) {
+      await this.replenishBuffer();
+      next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    }
+
     if (next) {
       await this.startItem(next);
     } else {
-      this.state.currentQueueItemId = null; this.state.playbackStatus = "idle";
-      this.state.playbackPositionSeconds = 0; this.state.playbackStartedAt = null;
+      this.state.playbackStatus = "idle";
     }
     this.touch();
     void this.replenishBuffer();
     return next ?? null;
   }
 
-
   pause() { if (this.state.currentQueueItemId) this.state.playbackStatus = "paused"; this.touch(); }
-  resume() { if (this.state.currentQueueItemId) this.state.playbackStatus = "playing"; this.touch(); }
+  async resume() {
+    if (this.state.currentQueueItemId) {
+      this.state.playbackStatus = "playing";
+      this.touch();
+    } else {
+      await this.startTrip();
+    }
+  }
+
   updatePlaybackPosition(seconds: number) {
     if (Number.isFinite(seconds) && seconds >= 0) {
       this.state.playbackPositionSeconds = seconds;

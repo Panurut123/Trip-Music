@@ -672,19 +672,23 @@ $('#start').onclick=async()=>{
 
 $('#pause').onclick=async()=>{
   const isPaused = snapshot?.state?.playbackStatus === 'paused';
+  const isPlaying = snapshot?.state?.playbackStatus === 'playing';
   if(isPaused){
     youtubeAdapter.playVideo();
     if(controller.getActiveType()==='audio') audio.play().catch(()=>{});
     if(controller.getActiveType()==='video') video.play().catch(()=>{});
     await post('/api/player/resume');
-  } else {
+  } else if(isPlaying){
     youtubeAdapter.pauseVideo();
     if(controller.getActiveType()==='audio') audio.pause();
     if(controller.getActiveType()==='video') video.pause();
     await post('/api/player/pause');
+  } else {
+    await post('/api/player/start');
   }
   await refresh();
 };
+
 
 $('#skip').onclick=async()=>{
   await post('/api/player/skip');
