@@ -492,20 +492,45 @@ import {createPlayerController,fallbackCover} from '/player-controller.js';
 
 const $=selector=>document.querySelector(selector), audio=$('#audio'), video=$('#video');
 let snapshot=null, lastProgressSent=0, advancing=false, lastEndedTrackId=null, lastErrorTrackId=null;
-let idleTimer=null, lastRenderedTrackId=null;
+let idleTimer=null, lastRenderedTrackId=null, hudTrackId=null;
+let shownHudMilestones=new Set(), ytRetry5TrackId=null;
 
-function resetIdleTimer() {
+function showHudFor(ms=5000) {
   document.body.classList.remove('idle');
   if(idleTimer) clearTimeout(idleTimer);
   idleTimer=setTimeout(()=>{
-    if(snapshot?.state?.playbackStatus==='playing'){
-      document.body.classList.add('idle');
-    }
-  }, 3500);
+    if(snapshot?.state?.playbackStatus==='playing') document.body.classList.add('idle');
+  }, ms);
 }
-window.addEventListener('mousemove', resetIdleTimer);
-window.addEventListener('touchstart', resetIdleTimer);
-resetIdleTimer();
+function resetIdleTimer(){ showHudFor(5000); }
+window.addEventListener('mousemove', resetIdleTimer, {passive:true});
+window.addEventListener('touchstart', resetIdleTimer, {passive:true});
+window.addEventListener('pointerdown', resetIdleTimer, {passive:true});
+showHudFor(5000);
+
+function maybeShowPassiveHud(pos,dur,currentId){
+  if(!currentId || !dur || dur < 1) return;
+  if(hudTrackId!==currentId){
+    hudTrackId=currentId;
+    shownHudMilestones=new Set();
+    showHudFor(5200);
+  }
+  const remaining=dur-pos;
+  if(remaining>0 && remaining<=12 && !shownHudMilestones.has('before-end')){
+    shownHudMilestones.add('before-end');
+    showHudFor(14000);
+    return;
+  }
+  const marks=dur<60?[]:dur<180?[0.5]:[0.25,0.55,0.8];
+  for(const mark of marks){
+    const key=`p${mark}`;
+    if(!shownHudMilestones.has(key) && pos>=dur*mark && remaining>18){
+      shownHudMilestones.add(key);
+      showHudFor(4200);
+      break;
+    }
+  }
+}
 
 function formatTime(sec) {
   const s = Math.max(0, Math.floor(sec || 0));
@@ -530,7 +555,7 @@ function createYouTubeAdapter(){
       player=new window.YT.Player('youtube-player',{
         height:'100%',
         width:'100%',
-        host:'https://www.youtube-nocookie.com',
+        host:'https://www.youtube.com',
         playerVars:{
           playsinline:1,
           enablejsapi:1,
@@ -539,7 +564,6 @@ function createYouTubeAdapter(){
           rel:0,
           iv_load_policy:3,
           autoplay:0,
-          modestbranding:1,
           origin:(window.location.origin && window.location.origin !== 'null') ? window.location.origin : undefined
         },
         events:{
@@ -670,15 +694,38 @@ async function onTrackEnded(source){
   finally{setTimeout(()=>{advancing=false;},1200);}
 }
 
+function youtubeErrorMessage(code){
+  const n=Number(code);
+  if(n===100) return 'วิดีโอนี้ไม่พร้อมใช้งาน • กำลังข้าม…';
+  if(n===101||n===150) return 'วิดีโอนี้ไม่อนุญาตให้เล่นบนจอรถ • กำลังข้าม…';
+  if(n===153) return 'YouTube ปฏิเสธการเชื่อมต่อของเบราว์เซอร์นี้ • กำลังข้าม…';
+  if(n===5) return 'YouTube เล่นวิดีโอนี้ไม่ได้ • กำลังลองใหม่…';
+  return 'เพลงนี้เล่นไม่ได้ • กำลังข้าม…';
+}
+function showBanner(text,ms=4000){
+  const banner=$('#error-banner');
+  banner.textContent=text;
+  banner.style.display='block';
+  setTimeout(()=>{banner.style.display='none';},ms);
+}
 async function onTrackError(source, err){
   if(source && source !== controller.getActiveType()) return;
   const currentId=snapshot?.state?.currentQueueItemId;
-  if(!currentId||lastErrorTrackId===currentId)return;
+  if(!currentId)return;
+  const code=Number(err);
+  if(code===5 && ytRetry5TrackId!==currentId){
+    ytRetry5TrackId=currentId;
+    showBanner(youtubeErrorMessage(code),1800);
+    setTimeout(()=>youtubeAdapter.playVideo(),650);
+    return;
+  }
+  if(lastErrorTrackId===currentId)return;
   lastErrorTrackId=currentId;
-  const banner=$('#error-banner');
-  banner.style.display='block';
-  setTimeout(()=>{banner.style.display='none';},4000);
-  try{await post('/api/player/skip');await refresh();}catch(e){console.error('[player] error skip',e);}
+  showBanner(youtubeErrorMessage(code),4200);
+  try{
+    await fetch('/api/player/error',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:Number.isFinite(code)?code:String(err??'unknown')})});
+    await refresh();
+  }catch(e){console.error('[player] playback error transition',e);}
 }
 
 
@@ -689,7 +736,11 @@ async function sync(data){
   const currentTrackId=current?.id||null;
   if(currentTrackId && currentTrackId!==lastRenderedTrackId){
     lastRenderedTrackId=currentTrackId;
-    resetIdleTimer();
+    lastErrorTrackId=null;
+    ytRetry5TrackId=null;
+    hudTrackId=currentTrackId;
+    shownHudMilestones=new Set();
+    showHudFor(5200);
   }
   const isTripStarted = Boolean(state.tripStarted || state.currentQueueItemId || state.playbackStatus==='playing' || state.playbackStatus==='paused');
 
@@ -729,10 +780,21 @@ async function sync(data){
     $('#time-total').textContent = formatTime(dur);
   } else {
     const titleEl=$('#title');
-    titleEl.textContent='พร้อมออกเดินทาง';
+    const preparing=queue.find(item=>['waiting','preparing'].includes(item.status));
+    if(state.tripStarted && preparing){
+      titleEl.textContent='กำลังเตรียมเพลงถัดไป…';
+      $('#mode-text').textContent='♫ TRIP MUSIC';
+      $('#artist').textContent=`${preparing.title&&preparing.title!=='New request'?preparing.title:'กำลังอ่านข้อมูลเพลง'} • พร้อมเมื่อไรจะเล่นต่ออัตโนมัติ`;
+    }else if(state.tripStarted){
+      titleEl.textContent='คิวว่างแล้ว 🎵';
+      $('#mode-text').textContent='♫ TRIP MUSIC';
+      $('#artist').textContent='รอเพลงใหม่จากเพื่อน ๆ • เพลงใหม่พร้อมเมื่อไรจะเริ่มเอง';
+    }else{
+      titleEl.textContent='พร้อมออกเดินทาง';
+      $('#mode-text').textContent='♫ TRIP MUSIC';
+      $('#artist').textContent='รอเพลงแรกของทริป…';
+    }
     titleEl.classList.remove('long-title');
-    $('#mode-text').textContent='♫ TRIP MUSIC';
-    $('#artist').textContent='รอเพลงแรกของทริป…';
     $('#bar').style.width='0%';
     $('#time-curr').textContent = '0:00';
     $('#time-total').textContent = '0:00';
@@ -795,7 +857,12 @@ $('#pause').onclick=async()=>{
 
 
 $('#skip').onclick=async()=>{
-  await post('/api/player/skip');
+  const response=await fetch('/api/player/skip',{method:'POST'});
+  if(!response.ok) return;
+  const result=await response.json();
+  if(result?.skipped===false){
+    showBanner('เพลงถัดไปกำลังเตรียมอยู่ • เพลงปัจจุบันจะเล่นต่อ',3000);
+  }
   await refresh();
 };
 
@@ -815,6 +882,7 @@ async function reportProgress(pos,dur){
     $('#bar').style.width=`${Math.min(100,(pos/dur)*100)}%`;
     $('#time-curr').textContent = formatTime(pos);
     $('#time-total').textContent = formatTime(dur);
+    maybeShowPassiveHud(pos,dur,snapshot?.state?.currentQueueItemId);
   }
   const at=Date.now();if(at-lastProgressSent<4500)return;
   lastProgressSent=at;

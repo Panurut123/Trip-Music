@@ -12,7 +12,7 @@ function parseProfile(raw: string | null): StoredTripProfile | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Partial<StoredTripProfile>;
-    if (!Number.isInteger(value.seatNo) || Number(value.seatNo) < 1 || Number(value.seatNo) > 38) return null;
+    if (!Number.isInteger(value.seatNo) || Number(value.seatNo) < 1 || Number(value.seatNo) > 40) return null;
     if (typeof value.nickname !== "string" || !value.nickname.trim()) return null;
     if (typeof value.pin !== "string" || !/^\d{4}$/.test(value.pin)) return null;
     if (typeof value.deviceId !== "string" || value.deviceId.length < 8) return null;

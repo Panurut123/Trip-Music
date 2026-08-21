@@ -68,7 +68,7 @@ export type SystemState = { roomId: string; requestsEnabled: boolean; tripStarte
 
 export const enqueueSchema = z.object({ sourceUrl: z.string().trim().url().max(500), requestedMode: z.enum([RequestedMode.AUDIO, RequestedMode.VIDEO]).default(RequestedMode.AUDIO), profileId: z.string().uuid().optional() });
 export const profileSchema = z.object({
-  seatNo: z.number().int().min(1).max(38),
+  seatNo: z.number().int().min(1).max(40),
   nickname: z.string().trim().min(1).max(20).regex(/^[\p{L}\p{N} _.'-]+$/u),
   deviceId: z.string().min(8).max(100),
   pin: z.string().regex(/^\d{4}$/).optional(),

@@ -6,6 +6,7 @@ import { webConfig } from "@/lib/config";
 import { getSupabase } from "@/lib/supabase";
 import { mapQueueRow } from "@/lib/data";
 import type { QueueItem } from "@trip-music/shared";
+import { formatSeatLabel } from "@/lib/seat";
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<QueueItem[]>(webConfig.demoMode ? demoItems.slice(0, 3) : []);
@@ -68,7 +69,7 @@ export default function HistoryPage() {
                   <div className="track-title">{item.title}</div>
                   <div className="track-artist">{item.artist}</div>
                   <div className="queue-foot">
-                    {item.playbackType === "embed" ? "YouTube" : item.requestedMode.toUpperCase()} • Requested by {item.requesterNickname ?? "Passenger"}
+                    {item.playbackType === "embed" ? "YouTube • Online" : item.requestedMode.toUpperCase()} • {item.requesterNickname ?? "Passenger"}{item.seatNo ? ` • ${formatSeatLabel(item.seatNo)}` : ""}
                   </div>
                 </div>
               </div>

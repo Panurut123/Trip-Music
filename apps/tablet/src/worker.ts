@@ -52,6 +52,7 @@ export class TripWorker {
   private pollTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
   private preparationPromise: Promise<void> | null = null;
+  private autoStartPromise: Promise<QueueItem | null> | null = null;
 
   state: SystemState = {
     roomId: tabletConfig.roomId, requestsEnabled: true, tripStarted: false, currentQueueItemId: null,
@@ -122,9 +123,11 @@ export class TripWorker {
   }
 
   private async heartbeat() {
+    const wasOnline = this.state.internetOnline;
     this.state.workerLastSeen = now();
     this.state.internetOnline = await this.checkInternet();
     this.touch();
+    if (!wasOnline && this.state.internetOnline) void this.maybeStartNext("internet-restored");
   }
 
 
@@ -181,6 +184,7 @@ export class TripWorker {
       });
       this.state.internetOnline = true;
       await this.replenishBuffer();
+      await this.maybeStartNext("reconcile");
     } catch (error) {
       this.state.internetOnline = false;
       console.error("[worker]", error);
@@ -269,9 +273,7 @@ export class TripWorker {
         item.errorMessage = null;
         await this.persist(item);
 
-        if (this.state.tripStarted && (!this.state.currentQueueItemId || this.state.playbackStatus === "idle")) {
-          await this.startItem(item);
-        }
+        await this.maybeStartNext("media-ready");
 
       } catch (error) {
         const message = error instanceof Error ? error.message : "Preparation failed";
@@ -280,7 +282,7 @@ export class TripWorker {
         } else {
           item.mediaStatus = "failed"; item.mediaError = message;
         }
-        item.status = "failed"; item.errorMessage = message;
+        item.status = "failed"; item.errorMessage = message; item.finishedAt = now();
         await this.persist(item);
       }
     }
@@ -288,67 +290,97 @@ export class TripWorker {
 
   current() { return this.items.find((item) => item.id === this.state.currentQueueItemId) ?? null; }
 
+  private canAutoStart() {
+    return this.state.tripStarted && !this.state.currentQueueItemId && this.state.playbackStatus !== "paused" && this.state.playbackStatus !== "stopped";
+  }
+
+  async maybeStartNext(_reason = "state-change"): Promise<QueueItem | null> {
+    if (!this.canAutoStart()) return this.current();
+    if (this.autoStartPromise) return this.autoStartPromise;
+    this.autoStartPromise = (async () => {
+      if (!this.canAutoStart()) return this.current();
+      const next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+      if (!next) {
+        this.state.playbackStatus = "idle";
+        this.touch();
+        return null;
+      }
+      await this.startItem(next);
+      this.touch();
+      return next;
+    })().finally(() => { this.autoStartPromise = null; });
+    return this.autoStartPromise;
+  }
+
   async startTrip() {
     this.state.tripStarted = true;
-    let next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    this.state.playbackStatus = "idle";
+    this.touch();
+    let next = await this.maybeStartNext("start-trip");
     if (!next) {
       await this.replenishBuffer();
-      next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+      next = await this.maybeStartNext("start-trip-prepared");
     }
-    if (next) {
-      await this.startItem(next);
-    }
-    this.touch();
     return next ?? null;
   }
 
   private async startItem(item: QueueItem) {
-    item.status = QueueStatus.PLAYING; item.startedAt = now(); item.finishedAt = null;
-    this.state.currentQueueItemId = item.id; this.state.playbackStatus = "playing";
-    this.state.playbackPositionSeconds = 0; this.state.playbackStartedAt = item.startedAt;
+    if (this.state.currentQueueItemId && this.state.currentQueueItemId !== item.id) return;
+    item.status = QueueStatus.PLAYING;
+    item.startedAt = now();
+    item.finishedAt = null;
+    this.state.currentQueueItemId = item.id;
+    this.state.playbackStatus = "playing";
+    this.state.playbackPositionSeconds = 0;
+    this.state.playbackStartedAt = item.startedAt;
     await this.persist(item);
   }
 
-  async advance(reason: "ended" | "skipped") {
-    const current = this.current();
-    if (current) {
-      current.status = reason === "ended" ? QueueStatus.PLAYED : QueueStatus.SKIPPED;
-      current.finishedAt = now();
-      await this.persist(current);
-    }
+  private clearCurrentForTransition() {
     this.state.currentQueueItemId = null;
     this.state.playbackPositionSeconds = 0;
     this.state.playbackStartedAt = null;
-
-    let next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
-    if (!next) {
-      await this.replenishBuffer();
-      if (this.state.currentQueueItemId && this.state.playbackStatus === "playing") {
-        this.touch();
-        return this.current();
-      }
-      next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
-    }
-
-    if (next) {
-      await this.startItem(next);
-    } else {
-      this.state.playbackStatus = "idle";
-    }
-
-    this.touch();
-    void this.replenishBuffer();
-    return next ?? null;
+    if (this.state.tripStarted) this.state.playbackStatus = "idle";
   }
 
-  pause() { if (this.state.currentQueueItemId) this.state.playbackStatus = "paused"; this.touch(); }
+  async advance(reason: "ended" | "skipped") {
+    if (reason === "skipped") return this.skip();
+    this.state.tripStarted = true;
+    const current = this.current();
+    if (current) {
+      current.status = QueueStatus.PLAYED;
+      current.finishedAt = now();
+      await this.persist(current);
+    }
+    this.clearCurrentForTransition();
+    this.touch();
+
+    const next = await this.maybeStartNext("ended");
+    if (next) {
+      void this.replenishBuffer();
+      return next;
+    }
+    void this.replenishBuffer().then(() => this.maybeStartNext("late-ready-after-ended"));
+    return null;
+  }
+
+
+  pause() {
+    if (this.state.currentQueueItemId) this.state.playbackStatus = "paused";
+    this.touch();
+  }
+
   async resume() {
     if (this.state.currentQueueItemId) {
       this.state.playbackStatus = "playing";
       this.touch();
-    } else {
-      await this.startTrip();
+      return;
     }
+    if (!this.state.tripStarted) this.state.tripStarted = true;
+    this.state.playbackStatus = "idle";
+    this.touch();
+    const next = await this.maybeStartNext("resume-empty");
+    if (!next) void this.replenishBuffer().then(() => this.maybeStartNext("resume-late-ready"));
   }
 
   updatePlaybackPosition(seconds: number) {
@@ -358,8 +390,48 @@ export class TripWorker {
       this.touch();
     }
   }
-  skip() { return this.advance("skipped"); }
+
+  async skip() {
+    const current = this.current();
+    if (!current) return this.maybeStartNext("skip-without-current");
+
+    const next = selectNextPlayable(this.items, { internetOnline: this.state.internetOnline });
+    if (!next) {
+      // A normal skip must never create a blank player just because the next request is still preparing.
+      void this.replenishBuffer();
+      this.touch();
+      return current;
+    }
+
+    current.status = QueueStatus.SKIPPED;
+    current.finishedAt = now();
+    await this.persist(current);
+    this.clearCurrentForTransition();
+    await this.startItem(next);
+    this.touch();
+    void this.replenishBuffer();
+    return next;
+  }
+
   ended() { return this.advance("ended"); }
+
+  async failCurrent(errorCode?: number | string) {
+    const current = this.current();
+    if (current) {
+      const code = errorCode == null ? "unknown" : String(errorCode);
+      current.status = QueueStatus.FAILED;
+      current.mediaStatus = "failed";
+      current.mediaError = `youtube_error_${code}`;
+      current.errorMessage = current.mediaError;
+      current.finishedAt = now();
+      await this.persist(current);
+    }
+    this.clearCurrentForTransition();
+    this.touch();
+    const next = await this.maybeStartNext("playback-error");
+    if (!next) void this.replenishBuffer().then(() => this.maybeStartNext("late-ready-after-error"));
+    return next;
+  }
 
   async processCommand(command: PlayerCommand | string) {
     if (command === "pause") this.pause();
@@ -416,7 +488,7 @@ export class TripWorker {
     };
     this.items.push(item);
     this.touch();
-    void this.replenishBuffer();
+    void this.replenishBuffer().then(() => this.maybeStartNext("local-request-ready"));
     return item;
   }
 

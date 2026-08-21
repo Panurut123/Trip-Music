@@ -66,14 +66,16 @@ export class YouTubeMetadataResolver implements MetadataResolver {
           const row = (await r.json() as {
             items?: Array<{
               snippet?: { title?: string; channelTitle?: string; thumbnails?: Record<string, { url: string }> };
-              contentDetails?: { duration?: string };
-              status?: { embeddable?: boolean };
+              contentDetails?: { duration?: string; regionRestriction?: { allowed?: string[]; blocked?: string[] } };
+              status?: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string };
               liveStreamingDetails?: unknown;
             }>;
           }).items?.[0];
+          if (!row) throw new Error("youtube_unavailable");
           if (row?.snippet) {
-            if (row.liveStreamingDetails) throw new Error("Livestreams are not supported");
-            if (row.status && row.status.embeddable === false) throw new Error("Video does not allow embedding");
+            if (row.liveStreamingDetails) throw new Error("youtube_livestream_unsupported");
+            if (row.status?.privacyStatus === "private" || row.status?.uploadStatus === "deleted" || row.status?.uploadStatus === "rejected") throw new Error("youtube_unavailable");
+            if (row.status && row.status.embeddable === false) throw new Error("youtube_unembeddable");
             const t = row.snippet.thumbnails ?? {};
             const thumbnail = ["maxres", "standard", "high", "medium", "default"].map((k) => t[k]?.url).find(Boolean) ?? null;
             return {
@@ -89,9 +91,7 @@ export class YouTubeMetadataResolver implements MetadataResolver {
           }
         }
       } catch (err) {
-        if (err instanceof Error && (err.message.includes("embedding") || err.message.includes("Livestreams"))) {
-          throw err;
-        }
+        if (err instanceof Error && /^youtube_(unembeddable|unavailable|livestream_unsupported)$/.test(err.message)) throw err;
       }
     }
 

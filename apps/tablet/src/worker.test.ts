@@ -210,6 +210,57 @@ describe("TripWorker playback reliability", () => {
     const resolver = new YouTubeEmbedProvider();
     expect(resolver.canHandle("https://www.youtube.com/watch?v=jNQXAC9IVRw")).toBe(true);
   });
+
+  it("keeps current track playing when skip is pressed before next track is ready", async () => {
+    const worker = new TripWorker({ cache: cache(), resolvers: [], providers: [] });
+    const a = queueItem("A", 1, "playing"), b = queueItem("B", 2, "preparing");
+    worker.items.push(a, b);
+    worker.state.tripStarted = true;
+    worker.state.currentQueueItemId = a.id;
+    worker.state.playbackStatus = "playing";
+    const result = await worker.skip();
+    expect(result?.id).toBe("A");
+    expect(a.status).toBe("playing");
+    expect(worker.state.currentQueueItemId).toBe("A");
+  });
+
+  it("auto-starts a track that becomes ready after the previous song already ended", async () => {
+    const provider: MediaProvider = {
+      canHandle: () => true,
+      prepareAudio: async (item) => ({ playbackType: "local", mediaKey: `${item.id}.wav`, mediaType: "audio" }),
+      prepareVideo: async (item) => ({ playbackType: "local", mediaKey: `${item.id}.mp4`, mediaType: "video" }),
+    };
+    const worker = new TripWorker({ cache: cache(), resolvers: [], providers: [provider], targetBufferSeconds: 1800, maxPreparedTracks: 12 });
+    const a = queueItem("A", 1, "playing");
+    const b = { ...queueItem("B", 2, "waiting"), localMediaKey: null, mediaStatus: "pending" as const };
+    worker.items.push(a, b);
+    worker.state.tripStarted = true;
+    worker.state.currentQueueItemId = a.id;
+    worker.state.playbackStatus = "playing";
+
+    expect(await worker.ended()).toBeNull();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(b.status).toBe("playing");
+    expect(worker.state.currentQueueItemId).toBe("B");
+  });
+
+  it("keeps an active trip alive through an empty queue and auto-starts a later request", async () => {
+    const provider: MediaProvider = {
+      canHandle: () => true,
+      prepareAudio: async (item) => ({ playbackType: "local", mediaKey: `${item.id}.wav`, mediaType: "audio" }),
+      prepareVideo: async (item) => ({ playbackType: "local", mediaKey: `${item.id}.mp4`, mediaType: "video" }),
+    };
+    const worker = new TripWorker({ cache: cache(), resolvers: [], providers: [provider] });
+    worker.state.tripStarted = true;
+    worker.state.playbackStatus = "idle";
+    const item = { ...queueItem("late", 1, "waiting"), localMediaKey: null, mediaStatus: "pending" as const };
+    worker.items.push(item);
+    await worker.replenishBuffer();
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(worker.state.currentQueueItemId).toBe(item.id);
+    expect(item.status).toBe("playing");
+  });
+
 });
 
 

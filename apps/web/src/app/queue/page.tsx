@@ -8,6 +8,7 @@ import { mapQueueRow, mapStateRow } from "@/lib/data";
 import { clearProfile, getStoredProfile, type StoredTripProfile } from "@/lib/profile-storage";
 import { webConfig } from "@/lib/config";
 import { resolveRoomId } from "@/lib/room";
+import { formatSeatLabel } from "@/lib/seat";
 
 export default function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>(webConfig.demoMode ? demoItems : []);
@@ -18,14 +19,22 @@ export default function QueuePage() {
   const [submitting, setSubmitting] = useState(false);
   const [profile, setProfile] = useState<StoredTripProfile | null>(null);
 
+  const isYouTubeInput = /(?:youtube\.com|youtu\.be)/i.test(sourceUrl);
+  const directAudioInput = /\.(?:mp3|m4a|wav)(?:[?#]|$)/i.test(sourceUrl) && !isYouTubeInput;
+  const directVideoInput = /\.(?:mp4|webm)(?:[?#]|$)/i.test(sourceUrl) && !isYouTubeInput;
+  const effectiveMode: "audio" | "video" = isYouTubeInput ? "video" : directAudioInput ? "audio" : directVideoInput ? "video" : requestedMode;
+  const activeItems = items.filter(i => ["waiting", "preparing", "ready", "playing"].includes(i.status));
   const current = items.find(i => i.id === state?.currentQueueItemId) ?? items.find(i => i.status === "playing") ?? null;
-  const pending = items.filter(i => ["waiting", "preparing", "ready"].includes(i.status));
+  const pending = activeItems.filter(i => i.id !== current?.id && ["waiting", "preparing", "ready"].includes(i.status));
   const recentlyPlayed = useMemo(() => {
     return items
       .filter(i => ["played", "skipped"].includes(i.status))
       .sort((a, b) => (b.finishedAt ? Date.parse(b.finishedAt) : 0) - (a.finishedAt ? Date.parse(a.finishedAt) : 0));
   }, [items]);
-  const eta = useMemo(() => calculateEta(items, state?.playbackPositionSeconds ?? 0), [items, state?.playbackPositionSeconds]);
+  const latestFailed = useMemo(() => items
+    .filter(i => i.status === "failed" && Boolean(profile) && i.seatNo === profile?.seatNo)
+    .sort((a, b) => Date.parse(b.finishedAt ?? b.requestedAt) - Date.parse(a.finishedAt ?? a.requestedAt))[0] ?? null, [items, profile]);
+  const eta = useMemo(() => calculateEta(activeItems, state?.playbackPositionSeconds ?? 0), [activeItems, state?.playbackPositionSeconds]);
 
 
   const tabletBase = typeof window !== "undefined" ? `http://${window.location.hostname}:3000` : "http://localhost:3000";
@@ -68,6 +77,22 @@ export default function QueuePage() {
     };
 
     void initAuth();
+
+    const verifySeatAccess = async () => {
+      if (!storedProfile) return;
+      const supabase = getSupabase();
+      if (!supabase) return;
+      try {
+        const roomId = await resolveRoomId(supabase);
+        const { data } = await supabase.rpc("seat_status", { p_room_id: roomId, p_seat_no: storedProfile.seatNo });
+        if (data?.login_enabled === false) {
+          clearProfile();
+          window.location.href = "/login";
+        }
+      } catch {}
+    };
+    void verifySeatAccess();
+    const accessInterval = setInterval(() => { void verifySeatAccess(); }, 10_000);
 
     const loadFromTablet = async () => {
       try {
@@ -118,6 +143,7 @@ export default function QueuePage() {
     return () => {
       cancelled = true;
       clearInterval(pollInterval);
+      clearInterval(accessInterval);
       if (supabase && channel) void supabase.removeChannel(channel);
     };
   }, []);
@@ -140,7 +166,7 @@ export default function QueuePage() {
           const { data, error } = await supabase.rpc("enqueue_track", {
             p_room_id: roomId,
             p_source_url: sourceUrl.trim(),
-            p_requested_mode: requestedMode,
+            p_requested_mode: effectiveMode,
             p_device_id: deviceId,
           });
           if (!error && data) {
@@ -166,7 +192,7 @@ export default function QueuePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sourceUrl: sourceUrl.trim(),
-            requestedMode,
+            requestedMode: effectiveMode,
             requesterNickname: activeProfile.nickname,
             seatNo: activeProfile.seatNo,
           }),
@@ -195,6 +221,10 @@ export default function QueuePage() {
         setMessage("เพลงนี้มีคนขออยู่ในคิวแล้ว");
       } else if (raw.includes("requests disabled")) {
         setMessage("ขณะนี้ปิดรับคำขอเพลงชั่วคราว");
+      } else if (raw.includes("login_disabled")) {
+        clearProfile();
+        setMessage("เลขที่นี้ถูกปิดใช้งานชั่วคราว");
+        setTimeout(() => { window.location.href = "/login"; }, 700);
       } else if (raw.includes("blocked")) {
         setMessage("บัญชีนี้ถูกระงับการขอเพลง");
       } else if (raw.includes("profile required") || raw.includes("authentication")) {
@@ -222,14 +252,14 @@ export default function QueuePage() {
   return (
     <div className="mobile-page">
       <StudentNav active="queue" />
-      <main className="mobile-content">
+      <main className="mobile-content" id="queue">
         <p className="eyebrow">6/18 FIELD TRIP • 2026</p>
         <h1 className="page-title">คิวเพลง</h1>
         <p className="subline">
-          {items.length} เพลงในคิว <span aria-hidden="true">•</span> เวลารอประมาณ {items.length ? Math.max(1, Math.round(eta / 60)) : 0} นาที
+          {activeItems.length} เพลงในคิว <span aria-hidden="true">•</span> เวลารอประมาณ {activeItems.length ? Math.max(1, Math.round(eta / 60)) : 0} นาที
         </p>
 
-        {items.length === 0 ? (
+        {activeItems.length === 0 && !state?.tripStarted ? (
           <div className="glass" style={{ textAlign: "center", padding: "40px 20px", marginTop: 24, borderRadius: 24 }}>
             <p style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>ยังไม่มีเพลงในคิว</p>
             <p style={{ color: "var(--muted)", margin: 0 }}>ส่งเพลงแรกของทริปได้เลย 🎵</p>
@@ -244,13 +274,14 @@ export default function QueuePage() {
                   <div className="track-title">{display(current)}</div>
                   <div className="track-artist">{current.artist}</div>
                   <small className="queue-foot">
-                    {current.playbackType === "embed" ? "YOUTUBE • ONLINE" : current.requestedMode.toUpperCase()} • Requested by {current.requesterNickname ?? "Passenger"}
+                    {current.playbackType === "embed" ? "YOUTUBE • ONLINE" : current.requestedMode.toUpperCase()} • Requested by {current.requesterNickname ?? "Passenger"}{current.seatNo ? ` • ${formatSeatLabel(current.seatNo)}` : ""}
                   </small>
                 </div>
               </article>
             ) : (
-              <div className="glass" style={{ padding: "20px", borderRadius: 20, color: "var(--muted)" }}>
-                พร้อมออกเดินทาง • รอเริ่มเล่นเพลง
+              <div className="glass queue-waiting-card">
+                <strong>{state?.tripStarted ? (pending.length ? "กำลังเตรียมเพลงถัดไป…" : "คิวว่างแล้ว 🎵") : "พร้อมออกเดินทาง"}</strong>
+                <span>{state?.tripStarted ? (pending.length ? "พร้อมเมื่อไร ระบบจะเล่นต่อให้อัตโนมัติ" : "รอเพลงใหม่จากเพื่อน ๆ") : "รอเริ่มเล่นเพลง"}</span>
               </div>
             )}
 
@@ -277,42 +308,48 @@ export default function QueuePage() {
           </>
         )}
 
-        <section className="request-panel glass">
+        <section className="request-panel glass" id="request">
           <p className="eyebrow">REQUEST A TRACK</p>
-          <div className="mode-toggle">
-            <button
-              type="button"
-              className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`}
-              onClick={() => setRequestedMode("audio")}
-            >
-              🎵 ฟังเพลง (Audio)
-            </button>
-            <button
-              type="button"
-              className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`}
-              onClick={() => setRequestedMode("video")}
-            >
-              🎬 ดูคลิปเต็มจอ (Video)
-            </button>
-          </div>
+          {isYouTubeInput ? (
+            <div className="source-detected youtube"><b>▶ YOUTUBE • ONLINE VIDEO</b><span>ลิงก์ YouTube จะเล่นเป็นวิดีโอออนไลน์บนจอรถ</span></div>
+          ) : directAudioInput ? (
+            <div className="source-detected"><b>🎵 LOCAL AUDIO</b><span>ไฟล์เสียงจะถูกเตรียมไว้บนเครื่องเล่น</span></div>
+          ) : directVideoInput ? (
+            <div className="source-detected"><b>🎬 LOCAL VIDEO</b><span>ไฟล์วิดีโอจะเล่นเต็มจอบนรถ</span></div>
+          ) : (
+            <div className="mode-toggle">
+              <button type="button" className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`} onClick={() => setRequestedMode("audio")}>🎵 Audio</button>
+              <button type="button" className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`} onClick={() => setRequestedMode("video")}>🎬 Video</button>
+            </div>
+          )}
           <form onSubmit={addRequest}>
             <input className="text-input" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="วางลิงก์ YouTube หรือ Direct Media" maxLength={500} />
             <button className="secondary-button" disabled={submitting}>{submitting ? "กำลังส่ง…" : "ขอเพลง"}</button>
           </form>
           {message && <p className="queue-foot" role="status">{message}</p>}
+          {latestFailed && (
+            <div className="request-failure" role="status">
+              <b>เพลงล่าสุดเล่นไม่ได้</b>
+              <span>{/unembeddable|embedding|youtube_error_(101|150)/i.test(`${latestFailed.metadataError ?? ""} ${latestFailed.mediaError ?? ""}`)
+                ? "เจ้าของวิดีโอไม่อนุญาตให้เล่นแบบฝังบนจอรถ — ขอเพลงอื่นได้ทันที"
+                : /youtube_error_100/i.test(latestFailed.mediaError ?? "")
+                ? "วิดีโอนี้ไม่พร้อมใช้งานแล้ว — ขอเพลงอื่นได้ทันที"
+                : "ระบบข้ามเพลงนี้แล้วและไม่กินโควตาคิวของคุณ"}</span>
+            </div>
+          )}
         </section>
 
 
         {recentlyPlayed.length > 0 && (
           <>
             <h2 className="section-label">RECENTLY PLAYED</h2>
-            <div className="recent-grid">
+            <div className="recent-grid recent-scroller">
               {recentlyPlayed.slice(0, 3).map(item => (
-                <div key={item.id}>
+                <article className="recent-card" key={item.id}>
                   <div className="cover" style={{ backgroundImage: item.thumbnailUrl || item.coverUrlOriginal ? `url(${item.thumbnailUrl || item.coverUrlOriginal})` : demoCover(item.id) }} />
                   <div className="track-title">{display(item)}</div>
                   <div className="track-artist">{item.artist}</div>
-                </div>
+                </article>
               ))}
             </div>
           </>

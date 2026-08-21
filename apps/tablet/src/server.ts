@@ -104,8 +104,19 @@ export function createServer(worker: TripWorker, options: { displayToken?: strin
   app.post("/api/player/start", displaySession, async (_req, res) => { const item = await worker.startTrip(); push(); res.json(item ?? { error: "No prepared track", state: worker.state }); });
   app.post("/api/player/pause", displaySession, (_req, res) => { worker.pause(); push(); res.json(worker.state); });
   app.post("/api/player/resume", displaySession, (_req, res) => { worker.resume(); push(); res.json(worker.state); });
-  app.post("/api/player/skip", displaySession, async (_req, res) => { const next = await worker.skip(); push(); res.json(next ?? { state: worker.state }); });
-  app.post("/api/player/ended", displaySession, async (_req, res) => { const next = await worker.ended(); push(); res.json(next ?? { state: worker.state }); });
+  app.post("/api/player/skip", displaySession, async (_req, res) => {
+    const before = worker.state.currentQueueItemId;
+    const next = await worker.skip();
+    push();
+    const skipped = Boolean(before && worker.state.currentQueueItemId && worker.state.currentQueueItemId !== before);
+    res.json({ skipped, item: next, reason: skipped ? null : "next_not_ready", state: worker.state });
+  });
+  app.post("/api/player/ended", displaySession, async (_req, res) => { const next = await worker.ended(); push(); res.json({ item: next, state: worker.state }); });
+  app.post("/api/player/error", displaySession, async (req, res) => {
+    const next = await worker.failCurrent(req.body?.code ?? "unknown");
+    push();
+    res.json({ item: next, state: worker.state });
+  });
   app.post("/api/player/progress", displaySession, (req, res) => { worker.updatePlaybackPosition(Number(req.body?.positionSeconds ?? 0)); res.json(worker.state); });
   app.get("/media/:mediaKey", (req, res) => { const file = worker.cache.mediaPath(req.params.mediaKey); if (!file) return res.status(400).end(); serveFileWithRange(req, res, file); });
   app.get("/covers/:coverKey", (req, res) => { const file = worker.cache.coverPath(req.params.coverKey); if (!file) return res.status(400).end(); serveFileWithRange(req, res, file); });

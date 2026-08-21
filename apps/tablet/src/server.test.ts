@@ -81,10 +81,17 @@ describe("bus display session & server endpoints", () => {
     await agent.post("/api/player/progress").send({ positionSeconds: 45 }).expect(200);
     expect(worker.state.playbackPositionSeconds).toBe(45);
 
-    // Skip
-    await agent.post("/api/player/skip").expect(200);
+    // Skip with no ready successor keeps the current song alive instead of creating a blank display.
+    const skip = await agent.post("/api/player/skip").expect(200);
+    expect(skip.body.skipped).toBe(false);
+    expect(worker.state.currentQueueItemId).toBe("yt-1");
+    expect(worker.state.playbackStatus).toBe("playing");
+
+    // A real playback failure is different from Skip: it marks the broken item failed and clears/advances.
+    await agent.post("/api/player/error").send({ code: 150 }).expect(200);
     expect(worker.state.currentQueueItemId).toBeNull();
-    expect(worker.state.playbackStatus).toBe("idle");
+    expect(worker.items[0].status).toBe("failed");
+    expect(worker.items[0].mediaError).toBe("youtube_error_150");
   });
 
   it("validates URLs on /api/queue/request and guards /api/reset with display session", async () => {
