@@ -4,7 +4,7 @@ import { demoCover, demoItems, demoState } from "@/lib/demo";
 import { StudentNav } from "@/components/StudentNav";
 import { calculateEta, type QueueItem, type SystemState } from "@trip-music/shared";
 import { getSupabase } from "@/lib/supabase";
-import { mapQueueRow, mapStateRow } from "@/lib/data";
+import { generateUUID, mapQueueRow, mapStateRow } from "@/lib/data";
 import { webConfig } from "@/lib/config";
 
 export default function QueuePage() {
@@ -42,8 +42,9 @@ export default function QueuePage() {
         }
         if (saved) {
           const p = JSON.parse(saved);
-          const deviceId = p.deviceId || localStorage.getItem("trip-music-device") || crypto.randomUUID();
+          const deviceId = p.deviceId || localStorage.getItem("trip-music-device") || generateUUID();
           const roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+
           await supabase.rpc("ensure_profile", {
             p_room_id: roomId,
             p_seat_no: p.seatNo ?? 7,

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Credit } from "@/components/Brand";
+import { generateUUID } from "@/lib/data";
 import { getSupabase } from "@/lib/supabase";
 import { webConfig } from "@/lib/config";
 
@@ -42,8 +43,9 @@ export default function LoginPage() {
       return;
     }
     try {
-      const deviceId = localStorage.getItem("trip-music-device") ?? crypto.randomUUID();
+      const deviceId = localStorage.getItem("trip-music-device") ?? generateUUID();
       localStorage.setItem("trip-music-device", deviceId);
+
       const supabase = getSupabase();
       if (supabase && !webConfig.demoMode) {
         let authUid: string | null = null;
@@ -96,11 +98,12 @@ export default function LoginPage() {
       window.location.href = "/queue";
     } catch (err) {
       console.error("[login] error:", err);
-      localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), deviceId: crypto.randomUUID() }));
+      localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), deviceId: generateUUID() }));
       window.location.href = "/queue";
     } finally {
       setBusy(false);
     }
+
 
   }
 
