@@ -115,31 +115,40 @@ export default function QueuePage() {
     if (!sourceUrl.trim()) return;
     setSubmitting(true);
     setMessage("");
+    const saved = typeof window !== "undefined" ? localStorage.getItem("trip-music-profile") : null;
+    const profile = saved ? JSON.parse(saved) : { nickname: "You", seatNo: 7 };
+    const deviceId = profile.deviceId || (typeof window !== "undefined" ? localStorage.getItem("trip-music-device") : null) || generateUUID();
+
     try {
       let enqueued = false;
       const supabase = getSupabase();
       if (!webConfig.demoMode && supabase) {
-        let roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
-        const sessionRes = await supabase.auth.getSession();
-        if (!sessionRes.data.session) {
-          await supabase.auth.signInAnonymously();
-        }
-        const { data, error } = await supabase.rpc("enqueue_track", {
-          p_room_id: roomId,
-          p_source_url: sourceUrl.trim(),
-          p_requested_mode: requestedMode,
-        });
-        if (!error && data) {
-          setItems(v => [...v, mapQueueRow(data as unknown as Record<string, unknown>)]);
-          enqueued = true;
-        } else if (error) {
-          throw error;
+        try {
+          let roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+          const { data, error } = await supabase.rpc("enqueue_track", {
+            p_room_id: roomId,
+            p_source_url: sourceUrl.trim(),
+            p_requested_mode: requestedMode,
+            p_device_id: deviceId,
+          });
+          if (!error && data) {
+            setItems(v => [...v, mapQueueRow(data as unknown as Record<string, unknown>)]);
+            enqueued = true;
+          } else if (error) {
+            const errStr = String(error.message || "");
+            if (errStr.includes("pending limit") || errStr.includes("duplicate") || errStr.includes("blocked")) {
+              throw error;
+            }
+          }
+        } catch (supaErr) {
+          const errStr = String((supaErr as any)?.message || "");
+          if (errStr.includes("pending limit") || errStr.includes("duplicate") || errStr.includes("blocked")) {
+            throw supaErr;
+          }
         }
       }
 
       if (!enqueued && !webConfig.demoMode) {
-        const saved = localStorage.getItem("trip-music-profile");
-        const profile = saved ? JSON.parse(saved) : { nickname: "You", seatNo: 7 };
         const res = await fetch(`${tabletBase}/api/queue/request`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -170,6 +179,8 @@ export default function QueuePage() {
         setMessage("เพลงนี้มีคนขออยู่ในคิวแล้ว");
       } else if (raw.includes("requests disabled")) {
         setMessage("ขณะนี้ปิดรับคำขอเพลงชั่วคราว");
+      } else if (raw.includes("blocked")) {
+        setMessage("บัญชีนี้ถูกระงับการขอเพลง");
       } else {
         setMessage("ไม่สามารถส่งเพลงได้ ตรวจสอบลิงก์อีกครั้ง");
       }
@@ -177,6 +188,7 @@ export default function QueuePage() {
       setSubmitting(false);
     }
   }
+
 
 
 
