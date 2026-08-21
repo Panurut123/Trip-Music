@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trip Music Diagnostics</title>
+<style>
+:root {
+  --bg: #0b0e14;
+  --panel: #191c22;
+  --text: #e1e2eb;
+  --muted: #a4b3a2;
+  --green: #53e076;
+  --red: #ff5449;
+  --border: rgba(255, 255, 255, 0.12);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: radial-gradient(circle at 15% 20%, #153820, transparent 35rem), var(--bg);
+  color: var(--text);
+  font: 16px system-ui, "Noto Sans Thai", -apple-system, sans-serif;
+  padding: clamp(20px, 4vw, 40px);
+}
+main { max-width: 780px; margin: auto; }
+h1 { font-size: clamp(24px, 4vw, 36px); color: var(--green); margin-bottom: 24px; font-weight: 900; }
+.card {
+  background: rgba(25, 28, 34, 0.85);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  border-radius: 24px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.checklist {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 600px) { .checklist { grid-template-columns: 1fr; } }
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+}
+.label { font-weight: 700; color: var(--muted); font-size: 14px; }
+.val { font-weight: 800; font-size: 15px; }
+.val.ok { color: var(--green); }
+.val.warn { color: #facc15; }
+.val.bad { color: var(--red); }
+.url-box {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  font: 14px monospace;
+  color: #a5c8ff;
+  word-break: break-all;
+  margin-top: 8px;
+  user-select: all;
+}
+.actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 25px;
+  padding: 0 24px;
+  background: #32353c;
+  color: var(--text);
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.button:active { transform: scale(0.97); }
+.button.primary { background: var(--green); color: #062e14; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TRIP MUSIC • TAB S9 DIAGNOSTICS</h1>
+
+  <div class="card">
+    <h3 style="margin-top:0;color:var(--muted);font-size:13px;letter-spacing:0.1em;text-transform:uppercase;">1. Core Health Checklist</h3>
+    <div class="checklist">
+      <div class="item">
+        <span class="label">Server Status</span>
+        <span class="val ok" id="chk-server">✓ Online</span>
+      </div>
+      <div class="item">
+        <span class="label">Worker Status</span>
+        <span class="val" id="chk-worker">…</span>
+      </div>
+      <div class="item">
+        <span class="label">Supabase Sync</span>
+        <span class="val" id="chk-supabase">…</span>
+      </div>
+      <div class="item">
+        <span class="label">Internet Connection</span>
+        <span class="val" id="chk-internet">…</span>
+      </div>
+      <div class="item">
+        <span class="label">Local Audio Buffer</span>
+        <span class="val" id="chk-buffer">…</span>
+      </div>
+      <div class="item">
+        <span class="label">Cached Audio Files</span>
+        <span class="val" id="chk-cache">…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;color:var(--muted);font-size:13px;letter-spacing:0.1em;text-transform:uppercase;">2. Network & Player URLs</h3>
+    <div style="margin-bottom:12px">
+      <span class="label">Tablet Local IP:</span> <b id="chk-ip" style="color:#fff">-</b>
+    </div>
+    <div class="label">Direct Bus Display URL (Open on Tablet or Laptop in same Wi-Fi):</div>
+    <div class="url-box" id="chk-urls">Loading…</div>
+  </div>
+
+  <div class="actions">
+    <button class="button primary" onclick="location.href='/player'">▶ OPEN BUS DISPLAY</button>
+    <button class="button" id="btn-tone">TEST AUDIO TONE</button>
+    <button class="button" onclick="loadDiagnostics()">🔄 REFRESH</button>
+  </div>
+  <audio id="audio" controls style="display:none;margin-top:15px;width:100%"></audio>
+</main>
+
+<script>
+async function loadDiagnostics(){
+  try {
+    const h = await fetch('/api/health').then(r=>r.json());
+    document.getElementById('chk-server').textContent = '✓ Online (Port ' + (h.port || 3000) + ')';
+    document.getElementById('chk-server').className = 'val ok';
+
+    const wEl = document.getElementById('chk-worker');
+    wEl.textContent = h.worker ? '✓ Online' : '✕ Offline';
+    wEl.className = 'val ' + (h.worker ? 'ok' : 'bad');
+
+    const sEl = document.getElementById('chk-supabase');
+    sEl.textContent = h.supabase ? '✓ Connected' : '— Disconnected';
+    sEl.className = 'val ' + (h.supabase ? 'ok' : 'warn');
+
+    const iEl = document.getElementById('chk-internet');
+    iEl.textContent = h.internetOnline ? '✓ Online' : '✕ Offline';
+    iEl.className = 'val ' + (h.internetOnline ? 'ok' : 'bad');
+
+    document.getElementById('chk-buffer').textContent = Math.ceil((h.bufferSeconds || 0) / 60) + ' min';
+    document.getElementById('chk-cache').textContent = (h.cache || 0) + ' tracks';
+
+    const ips = (h.localAddresses && h.localAddresses.length > 0) ? h.localAddresses : ['127.0.0.1'];
+    document.getElementById('chk-ip').textContent = ips.join(', ');
+
+    const urls = (h.playerUrls && h.playerUrls.length > 0) ? h.playerUrls : [location.origin + '/player'];
+    document.getElementById('chk-urls').textContent = urls.join('\n');
+  } catch(e) {
+    document.getElementById('chk-server').textContent = '✕ Unreachable';
+    document.getElementById('chk-server').className = 'val bad';
+  }
+}
+
+document.getElementById('btn-tone').onclick = () => {
+  const a = document.getElementById('audio');
+  a.style.display = 'block';
+  a.src = '/api/test-tone';
+  a.play().catch(e => console.warn('Audio tone play blocked:', e));
+};
+
+loadDiagnostics();
+</script>
+</body>
+</html>
+

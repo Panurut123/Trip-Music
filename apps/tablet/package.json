@@ -1,0 +1,33 @@
+{
+  "name": "@trip-music/tablet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "fixture:media": "tsx src/fixture-server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
+    "@trip-music/shared": "*",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "@types/supertest": "^7.2.1",
+    "@types/ws": "^8.5.13",
+    "lamejs": "^1.2.1",
+    "supertest": "^7.2.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.7"
+  }
+}

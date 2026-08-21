@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+import crypto from "node:crypto";
+export async function POST(request: Request){ const {pin}=await request.json().catch(()=>({pin:""})); const configured=process.env.ADMIN_PIN; if(configured && pin!==configured) return NextResponse.json({error:"invalid"},{status:401}); const secret=process.env.ADMIN_SESSION_SECRET||"trip-music-local-secret"; const token=crypto.createHmac("sha256",secret).update("admin").digest("hex"); const response=NextResponse.json({ok:true}); response.cookies.set("trip_music_admin",token,{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:60*60*12,path:"/"}); return response; }

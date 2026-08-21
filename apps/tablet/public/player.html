@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trip Music Player</title>
+<style>
+:root {
+  --bg: #0b0d13;
+  --panel: rgba(25, 28, 34, 0.85);
+  --text: #e1e2eb;
+  --muted: #a4b3a2;
+  --green: #53e076;
+  --green-glow: rgba(83, 224, 118, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.12);
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; margin: 0; padding: 0; }
+body {
+  background: radial-gradient(circle at 15% 20%, #153820, transparent 40rem), var(--bg);
+  color: var(--text);
+  font: 16px system-ui, "Noto Sans Thai", -apple-system, sans-serif;
+  user-select: none;
+}
+
+/* Base Video & YouTube Background Containers */
+.youtube-container {
+  display: none;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  background: #000;
+  pointer-events: none;
+}
+.youtube-mode .youtube-container { display: block; }
+.youtube-container iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+.video {
+  display: none;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  background: #000;
+  z-index: 1;
+  pointer-events: none;
+}
+.video-mode:not(.youtube-mode) .video { display: block; }
+
+/* AUDIO DASHBOARD MODE (Default 2-Column Grid) */
+.shell {
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  max-width: 1560px;
+  margin: auto;
+  padding: clamp(20px, 4vh, 48px) clamp(20px, 4vw, 64px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: clamp(24px, 4vw, 64px);
+  align-items: center;
+  position: relative;
+  z-index: 5;
+  transition: opacity 0.4s ease;
+}
+
+.cover {
+  width: min(38vw, 48vh, 480px);
+  aspect-ratio: 1;
+  border-radius: 32px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85);
+  margin-bottom: 24px;
+}
+
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(83, 224, 118, 0.15);
+  color: var(--green);
+  border: 1px solid rgba(83, 224, 118, 0.35);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+
+/* Title & Adaptive Typography */
+.title {
+  font-size: clamp(32px, 4.8vw, 72px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 900;
+  margin: 0 0 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  max-width: 95%;
+}
+.title.long-title {
+  font-size: clamp(24px, 3.4vw, 48px);
+  line-height: 1.12;
+  -webkit-line-clamp: 3;
+}
+
+.artist {
+  font-size: clamp(18px, 2.2vw, 32px);
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 20px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.progress-wrap {
+  margin-top: 20px;
+}
+.progress {
+  height: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--green);
+  box-shadow: 0 0 12px var(--green-glow);
+  transition: width 0.3s linear;
+}
+.time-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.controls {
+  display: flex;
+  gap: 14px;
+  margin-top: 24px;
+  pointer-events: auto;
+}
+.button {
+  min-width: 60px;
+  height: 56px;
+  border: 0;
+  border-radius: 28px;
+  background: rgba(50, 53, 60, 0.85);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-weight: 800;
+  font-size: 18px;
+  padding: 0 24px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+.button:active { transform: scale(0.96); }
+.button.primary {
+  background: var(--green);
+  color: #062e14;
+  box-shadow: 0 8px 24px var(--green-glow);
+}
+
+/* Glass Stats Panel (Audio Mode) */
+.glass {
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  border-radius: 28px;
+  padding: clamp(20px, 2.5vw, 32px);
+  max-height: 100%;
+  overflow: hidden;
+}
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.label { color: var(--muted); text-transform: uppercase; font-weight: 800; font-size: 12px; letter-spacing: 0.14em; }
+.number { font-size: 52px; font-weight: 900; margin: 4px 0; }
+.next { margin-top: 28px; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: 16px; background: rgba(255, 255, 255, 0.05); margin: 8px 0; }
+.mini { width: 52px; height: 52px; border-radius: 12px; background-size: cover; background-position: center; flex: 0 0 auto; }
+.empty-note { color: var(--muted); padding: 14px; font-weight: 600; }
+
+/* Status Pill */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px);
+  padding: 8px 18px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+/* Floating Next Preview Widget */
+.next-pill {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px);
+  padding: 8px 18px 8px 10px;
+  border-radius: 24px;
+  max-width: 380px;
+  pointer-events: auto;
+}
+.next-pill .mini { width: 38px; height: 38px; border-radius: 8px; }
+.next-pill-info { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+
+/* CINEMA HUD OVERLAY (YouTube & Video Mode) */
+.video-mode .shell, .youtube-mode .shell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  padding: clamp(24px, 4vh, 40px) clamp(24px, 4vw, 48px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.88) 0%,
+    rgba(0, 0, 0, 0.25) 20%,
+    transparent 35%,
+    transparent 65%,
+    rgba(0, 0, 0, 0.35) 78%,
+    rgba(0, 0, 0, 0.92) 100%
+  );
+  z-index: 10;
+}
+
+.video-mode .cover, .youtube-mode .cover { display: none !important; }
+.video-mode .glass, .youtube-mode .glass { display: none !important; }
+.video-mode .next-pill, .youtube-mode .next-pill { display: flex; }
+
+.video-mode .title, .youtube-mode .title {
+  font-size: clamp(24px, 3.6vw, 48px);
+  line-height: 1.1;
+  max-width: min(75vw, 950px);
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.95);
+}
+.video-mode .title.long-title, .youtube-mode .title.long-title {
+  font-size: clamp(18px, 2.6vw, 34px);
+  -webkit-line-clamp: 2;
+}
+
+.video-mode .artist, .youtube-mode .artist {
+  font-size: clamp(15px, 1.8vw, 24px);
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95);
+  margin-bottom: 0;
+}
+
+.video-mode .hud-top, .youtube-mode .hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.video-mode .hud-bottom, .youtube-mode .hud-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+.video-mode .bottom-row, .youtube-mode .bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Controls Auto-fade in Video Mode */
+.video-mode.idle .controls, .youtube-mode.idle .controls,
+.video-mode.idle .next-pill, .youtube-mode.idle .next-pill,
+.video-mode.idle .status-pill, .youtube-mode.idle .status-pill {
+  opacity: 0.18;
+  transition: opacity 0.8s ease;
+}
+
+/* Modals & Overlays */
+.autoplay-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(12px);
+  text-align: center;
+}
+.autoplay-content {
+  background: #191c22;
+  padding: 40px 60px;
+  border-radius: 30px;
+  border: 1px solid rgba(83, 224, 118, 0.4);
+}
+.autoplay-text { font-size: 32px; font-weight: 800; margin: 0 0 24px; color: #fff; }
+
+.error-banner {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: #ff5449;
+  color: #fff;
+  padding: 14px 28px;
+  border-radius: 30px;
+  font-weight: 800;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+@media (max-width: 850px) {
+  .shell { grid-template-columns: 1fr; padding: 18px 20px; gap: 14px; }
+  .cover { width: min(44vh, 56vw, 280px); }
+  .title { font-size: clamp(26px, 7vw, 44px); }
+  .artist { font-size: clamp(16px, 4vw, 22px); }
+  .glass { padding: 16px; }
+  .number { font-size: 36px; }
+}
+</style>
+<script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+
+<div id="youtube-player-container" class="youtube-container">
+  <div id="youtube-player"></div>
+</div>
+<video class="video" id="video" playsinline></video>
+
+<div id="error-banner" class="error-banner" style="display:none">เพลงนี้เล่นไม่ได้ กำลังข้าม…</div>
+<div id="autoplay-overlay" class="autoplay-overlay" style="display:none">
+  <div class="autoplay-content">
+    <p class="autoplay-text">แตะเพื่อเริ่มเล่นเพลง</p>
+    <button class="button primary" id="unlock-play">▶ PLAY</button>
+  </div>
+</div>
+
+<main class="shell" id="main-shell">
+  <!-- Left / Main Playing Area -->
+  <section class="main-pane">
+    <div class="hud-top">
+      <div class="hud-track-meta">
+        <div class="cover" id="cover"></div>
+        <div class="mode-pill" id="mode-pill"><span class="live-dot"></span> <span id="mode-text">♪ NOW PLAYING</span></div>
+        <h1 class="title" id="title">พร้อมออกเดินทาง</h1>
+        <div class="artist" id="artist">TRIP MUSIC • รอเพลงแรก…</div>
+      </div>
+      <div class="status-pill">
+        <span class="live-dot"></span>
+        <span id="status-pill-text">BUS DISPLAY • IDLE</span>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="progress-wrap">
+        <div class="progress"><span id="bar"></span></div>
+        <div class="time-label">
+          <span id="time-curr">0:00</span>
+          <span id="time-total">0:00</span>
+        </div>
+      </div>
+
+      <div class="bottom-row">
+        <div class="controls">
+          <button class="button primary" id="start">▶ START TRIP</button>
+          <button class="button" id="pause">Ⅱ</button>
+          <button class="button" id="skip">▶|</button>
+        </div>
+
+        <div class="next-pill" id="next-pill">
+          <div class="mini" id="next-pill-cover"></div>
+          <div class="next-pill-info">
+            <div style="font-size:11px;color:var(--muted);font-weight:800;letter-spacing:0.1em;text-transform:uppercase;">♫ NEXT TRACK</div>
+            <b id="next-pill-title">-</b>
+          </div>
+        </div>
+      </div>
+    </div>
+    <audio id="audio"></audio>
+  </section>
+
+  <!-- Right / Glass Stats Panel (Audio Mode Only) -->
+  <section class="glass" id="glass-pane">
+    <div class="stats">
+      <div>
+        <div class="label">Local Buffer</div>
+        <div class="number" id="buffer">0</div>
+        <div class="label">minutes</div>
+      </div>
+      <div>
+        <div class="label">Status</div>
+        <div class="number" id="status">IDLE</div>
+        <div class="label">BUS DISPLAY</div>
+      </div>
+    </div>
+    <div class="next">
+      <div class="label">♫ Next in Queue</div>
+      <div id="queue"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import {createPlayerController,fallbackCover} from '/player-controller.js';
+
+const $=selector=>document.querySelector(selector), audio=$('#audio'), video=$('#video');
+let snapshot=null, lastProgressSent=0, advancing=false, lastEndedTrackId=null, lastErrorTrackId=null;
+let idleTimer=null;
+
+function resetIdleTimer() {
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer=setTimeout(()=>{ document.body.classList.add('idle'); }, 4500);
+}
+['mousemove', 'touchstart', 'click', 'keydown'].forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
+resetIdleTimer();
+
+function formatTime(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${String(rem).padStart(2, '0')}`;
+}
+
+function createYouTubeAdapter(){
+  let player=null, isReady=false, queuedAction=null;
+  function initPlayer(){
+    if(window.YT && window.YT.Player && !player){
+      player=new window.YT.Player('youtube-player',{
+        height:'100%',
+        width:'100%',
+        playerVars:{
+          playsinline:1,
+          enablejsapi:1,
+          controls:0,
+          disablekb:1,
+          rel:0,
+          iv_load_policy:3,
+          autoplay:0,
+          origin:window.location.origin
+        },
+        events:{
+          onReady:()=>{
+            isReady=true;
+            if(queuedAction){const act=queuedAction;queuedAction=null;act();}
+          },
+          onStateChange:event=>{
+            if(window.YT && event.data===window.YT.PlayerState.PLAYING){
+              $('#autoplay-overlay').style.display='none';
+            }else if(window.YT && event.data===window.YT.PlayerState.ENDED){
+              void onTrackEnded('youtube');
+            }
+          },
+          onError:event=>{
+            void onTrackError(event?.data);
+          },
+          onAutoplayBlocked:()=>{
+            $('#autoplay-overlay').style.display='flex';
+          }
+        }
+      });
+    }
+  }
+  if(window.YT && window.YT.Player) initPlayer();
+  else {
+    const prev=window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady=()=>{if(prev)prev();initPlayer();};
+  }
+  return {
+    isReady:()=>isReady,
+    loadVideo:(videoId,startSeconds=0)=>{
+      const act=()=>{try{if(player&&typeof player.loadVideoById==='function'){player.loadVideoById({videoId,startSeconds:startSeconds||0});}}catch(e){console.warn('[yt] load',e);}};
+      if(isReady&&player)act(); else queuedAction=act;
+    },
+    cueVideo:(videoId,startSeconds=0)=>{
+      const act=()=>{try{if(player&&typeof player.cueVideoById==='function'){player.cueVideoById({videoId,startSeconds:startSeconds||0});}}catch(e){console.warn('[yt] cue',e);}};
+      if(isReady&&player)act(); else queuedAction=act;
+    },
+    playVideo:()=>{
+      try{if(isReady&&player&&typeof player.playVideo==='function')player.playVideo();}catch(e){console.warn('[yt] play',e);$('#autoplay-overlay').style.display='flex';}
+    },
+    pauseVideo:()=>{try{if(isReady&&player&&typeof player.pauseVideo==='function')player.pauseVideo();}catch(e){}},
+    stopVideo:()=>{try{if(isReady&&player&&typeof player.stopVideo==='function')player.stopVideo();}catch(e){}},
+    getCurrentTime:()=>{try{if(isReady&&player&&typeof player.getCurrentTime==='function')return player.getCurrentTime()||0;}catch(e){}return 0;},
+    getDuration:()=>{try{if(isReady&&player&&typeof player.getDuration==='function')return player.getDuration()||0;}catch(e){}return 0;},
+    seekTo:(sec)=>{try{if(isReady&&player&&typeof player.seekTo==='function')player.seekTo(sec,true);}catch(e){}}
+  };
+}
+
+const youtubeAdapter=createYouTubeAdapter();
+const controller=createPlayerController({audio,video,youtube:youtubeAdapter,cover:$('#cover')});
+
+function escapeText(value){const node=document.createElement('div');node.textContent=String(value??'');return node.innerHTML;}
+
+async function onTrackEnded(source){
+  const currentId=snapshot?.state?.currentQueueItemId;
+  if(!currentId||advancing||lastEndedTrackId===currentId)return;
+  advancing=true;lastEndedTrackId=currentId;
+  try{await post('/api/player/ended');await refresh();}
+  catch(e){console.error('[player] ended error',e);}
+  finally{setTimeout(()=>{advancing=false;},1200);}
+}
+
+async function onTrackError(err){
+  const currentId=snapshot?.state?.currentQueueItemId;
+  if(!currentId||lastErrorTrackId===currentId)return;
+  lastErrorTrackId=currentId;
+  const banner=$('#error-banner');
+  banner.style.display='block';
+  setTimeout(()=>{banner.style.display='none';},4000);
+  try{await post('/api/player/skip');await refresh();}catch(e){console.error('[player] error skip',e);}
+}
+
+async function sync(data){
+  snapshot=data;
+  const state=data.state||{}, queue=data.queue||[];
+  const current=queue.find(item=>item.id===state.currentQueueItemId)||null;
+  const isTripStarted = Boolean(state.tripStarted || state.currentQueueItemId || state.playbackStatus==='playing' || state.playbackStatus==='paused');
+
+  // De-emphasize / hide START TRIP button once trip has started
+  if(isTripStarted){
+    $('#start').style.display='none';
+  } else {
+    $('#start').style.display='inline-block';
+  }
+
+  if(current){
+    const titleEl=$('#title');
+    const titleText=current.title||'New request';
+    titleEl.textContent=titleText;
+    titleEl.classList.toggle('long-title', titleText.length > 40);
+
+    const requester=current.requesterNickname||'Passenger';
+    const isYt = current.playbackType==='embed' && current.embedProvider==='youtube';
+    const isVid = current.preparedMediaType==='video';
+    
+    if(isYt){
+      $('#mode-text').textContent='▶ YOUTUBE • ONLINE';
+    } else if(isVid){
+      $('#mode-text').textContent='▶ LOCAL VIDEO';
+    } else {
+      $('#mode-text').textContent='♫ NOW PLAYING';
+    }
+
+    $('#artist').textContent=`${current.artist||'Unknown'} • Requested by ${requester}`;
+
+    const dur = current.durationSeconds || (isYt ? youtubeAdapter.getDuration() : (isVid ? video.duration : audio.duration)) || 0;
+    const pos = Number(state.playbackPositionSeconds || 0);
+    const progress = dur > 0 ? Math.min(100, (pos / dur) * 100) : 0;
+    
+    $('#bar').style.width=`${progress}%`;
+    $('#time-curr').textContent = formatTime(pos);
+    $('#time-total').textContent = formatTime(dur);
+  } else {
+    const titleEl=$('#title');
+    titleEl.textContent='พร้อมออกเดินทาง';
+    titleEl.classList.remove('long-title');
+    $('#mode-text').textContent='♫ TRIP MUSIC';
+    $('#artist').textContent='รอเพลงแรกของทริป…';
+    $('#bar').style.width='0%';
+    $('#time-curr').textContent = '0:00';
+    $('#time-total').textContent = '0:00';
+  }
+
+  $('#buffer').textContent=String(Math.ceil((state.preparedBufferSeconds||0)/60));
+  const statusStr=String(state.playbackStatus||'idle').toUpperCase();
+  $('#status').textContent=statusStr;
+  $('#status-pill-text').textContent=`BUS DISPLAY • ${statusStr}`;
+  $('#pause').textContent=state.playbackStatus==='paused'?'▶':'Ⅱ';
+
+  const upcoming=queue.filter(item=>item.id!==current?.id&&['ready','waiting','preparing'].includes(item.status)).slice(0,4);
+  if(upcoming.length===0){
+    $('#queue').innerHTML='<div class="empty-note">ยังไม่มีเพลงในคิว</div>';
+    $('#next-pill').style.display='none';
+  } else {
+    const next1 = upcoming[0];
+    $('#next-pill-title').textContent = next1.title;
+    const nextCover = next1.localCoverKey ? `/covers/${encodeURIComponent(next1.localCoverKey)}` : next1.thumbnailUrl || fallbackCover(next1.id);
+    $('#next-pill-cover').style.backgroundImage = `url("${nextCover}")`;
+    if(document.body.classList.contains('youtube-mode') || document.body.classList.contains('video-mode')){
+      $('#next-pill').style.display='flex';
+    }
+
+    $('#queue').innerHTML=upcoming.map(item=>`<div class="row"><div class="mini" style="background-image:${item.localCoverKey?`url(/covers/${encodeURIComponent(item.localCoverKey)})`:item.thumbnailUrl?`url(${item.thumbnailUrl})`:fallbackCover(item.id)}"></div><div><b>${escapeText(item.title)}</b><br><span style="color:var(--muted)">${escapeText(item.artist)} • ${item.playbackType==='embed'?'YouTube':item.requestedMode.toUpperCase()}</span></div></div>`).join('');
+  }
+
+  await controller.syncPlayer(data);
+}
+
+async function post(path){const response=await fetch(path,{method:'POST'});if(!response.ok)throw new Error(`Player command failed (${response.status})`);return response.json();}
+async function refresh(){const [state,queue]=await Promise.all([fetch('/api/state').then(r=>r.json()),fetch('/api/queue').then(r=>r.json())]);await sync({state,queue});}
+
+$('#start').onclick=async()=>{
+  $('#autoplay-overlay').style.display='none';
+  youtubeAdapter.playVideo();
+  audio.play().catch(()=>{});
+  await post('/api/player/start');
+  await refresh();
+};
+$('#pause').onclick=async()=>{await post(`/api/player/${snapshot?.state.playbackStatus==='paused'?'resume':'pause'}`);await refresh();};
+$('#skip').onclick=async()=>{await post('/api/player/skip');await refresh();};
+$('#unlock-play').onclick=()=>{
+  $('#autoplay-overlay').style.display='none';
+  youtubeAdapter.playVideo();
+  if(controller.getActiveType()==='audio') audio.play().catch(()=>{});
+  if(controller.getActiveType()==='video') video.play().catch(()=>{});
+};
+
+audio.addEventListener('ended',()=>void onTrackEnded('audio'));
+video.addEventListener('ended',()=>void onTrackEnded('video'));
+
+async function reportProgress(pos,dur){
+  if(dur>0){
+    $('#bar').style.width=`${Math.min(100,(pos/dur)*100)}%`;
+    $('#time-curr').textContent = formatTime(pos);
+    $('#time-total').textContent = formatTime(dur);
+  }
+  const at=Date.now();if(at-lastProgressSent<4500)return;
+  lastProgressSent=at;
+  await fetch('/api/player/progress',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({positionSeconds:pos||0})}).catch(()=>{});
+}
+
+audio.addEventListener('timeupdate',()=>{const cur=snapshot?.queue?.find(i=>i.id===snapshot?.state?.currentQueueItemId);reportProgress(audio.currentTime,cur?.durationSeconds||audio.duration);});
+video.addEventListener('timeupdate',()=>{const cur=snapshot?.queue?.find(i=>i.id===snapshot?.state?.currentQueueItemId);reportProgress(video.currentTime,cur?.durationSeconds||video.duration);});
+
+setInterval(()=>{
+  if(controller.getActiveType()==='youtube'&&snapshot?.state?.playbackStatus==='playing'){
+    const cur=snapshot?.queue?.find(i=>i.id===snapshot?.state?.currentQueueItemId);
+    const pos=youtubeAdapter.getCurrentTime();
+    const dur=cur?.durationSeconds || youtubeAdapter.getDuration() || 0;
+    reportProgress(pos,dur);
+  }
+},1000);
+
+new EventSource('/events').onmessage=event=>void sync(JSON.parse(event.data));
+await refresh();
+</script>
+</body>
+</html>
+
+

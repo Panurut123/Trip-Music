@@ -1,0 +1,7 @@
+import type { QueueItem, SystemState } from "@trip-music/shared";
+export const demoRoomId="00000000-0000-0000-0000-000000000618";
+const m={sourceUrl:"mock:demo",sourceKey:"mock:demo",sourceProvider:"mock" as const,metadataStatus:"ready" as const,mediaStatus:"ready" as const};
+const item=(id:string,title:string,artist:string,status:QueueItem["status"],sortOrder:number):QueueItem=>({...m,id,roomId:demoRoomId,title,artist,durationSeconds:205,requestedMode:"audio",anonymousRequester:false,requesterNickname:"Beam",seatNo:7,sortOrder,status,localMediaKey:`${id}.wav`,requestedAt:"2026-08-21T08:00:00.000Z"});
+export const demoItems:QueueItem[]=[item("demo-1","Neon Stratosphere","Cosmic Voyager","playing",1),item("demo-2","Midnight Cruise","The Synthetics","ready",2),item("demo-3","Velocity Visions","Aero Dynamics","ready",3),{...item("demo-4","New request","Unknown","waiting",4),metadataStatus:"pending",mediaStatus:"pending",localMediaKey:null}];
+export const demoState:SystemState={roomId:demoRoomId,requestsEnabled:true,tripStarted:true,currentQueueItemId:"demo-1",playbackStatus:"playing",playbackStartedAt:"2026-08-21T08:02:00.000Z",playbackPositionSeconds:84,workerLastSeen:new Date().toISOString(),playerLastSeen:new Date().toISOString(),preparedBufferSeconds:597,cachedTrackCount:3,internetOnline:true,performanceMode:"balanced",videoEnabled:true,updatedAt:new Date().toISOString()};
+export const demoCover=(seed:string)=>`linear-gradient(135deg, hsl(${(seed.length*53)%360} 70% 28%), #10131a 55%, hsl(${(seed.length*91)%360} 80% 48%))`;

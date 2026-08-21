@@ -1,0 +1,4 @@
+"use client";
+import { useState } from "react";
+import { Brand } from "@/components/Brand";
+export default function AdminLoginPage(){ const [pin,setPin]=useState(""); const [error,setError]=useState(""); async function submit(e:React.FormEvent){e.preventDefault(); const r=await fetch("/api/admin/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin})}); if(!r.ok){setError("PIN ไม่ถูกต้อง");return} location.href="/admin";} return <main className="admin-login"><form className="glass" onSubmit={submit}><Brand compact/><h1>Admin control</h1><p className="subline">เข้าสู่หน้าควบคุม Trip Music</p><input className="text-input" style={{marginTop:22}} type="password" inputMode="numeric" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Admin PIN"/><button className="primary-button">เข้าสู่ระบบ</button>{error&&<div className="error-message">{error}</div>}</form></main> }
