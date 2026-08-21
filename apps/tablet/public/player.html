@@ -356,6 +356,17 @@ body {
   .glass { padding: 16px; }
   .number { font-size: 36px; }
 }
+.controls, .button, button, .next-pill, .status-pill, .mode-pill, .progress-wrap {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+.button.danger {
+  background: rgba(239, 68, 68, 0.7);
+  color: #fff;
+}
+.button.danger:hover {
+  background: rgba(239, 68, 68, 0.95);
+}
 </style>
 <script src="https://www.youtube.com/iframe_api"></script>
 </head>
@@ -402,8 +413,9 @@ body {
       <div class="bottom-row">
         <div class="controls">
           <button class="button primary" id="start">▶ START TRIP</button>
-          <button class="button" id="pause">Ⅱ</button>
-          <button class="button" id="skip">▶|</button>
+          <button class="button" id="pause" title="พัก / เล่นต่อ">Ⅱ</button>
+          <button class="button" id="skip" title="ข้ามเพลง">▶|</button>
+          <button class="button danger" id="reset" title="ล้างคิวทั้งหมด">🗑️</button>
         </div>
 
         <div class="next-pill" id="next-pill">
@@ -448,10 +460,15 @@ let idleTimer=null;
 
 function resetIdleTimer() {
   document.body.classList.remove('idle');
-  clearTimeout(idleTimer);
-  idleTimer=setTimeout(()=>{ document.body.classList.add('idle'); }, 4500);
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer=setTimeout(()=>{
+    if(snapshot?.state?.playbackStatus==='playing'){
+      document.body.classList.add('idle');
+    }
+  }, 5000);
 }
-['mousemove', 'touchstart', 'click', 'keydown'].forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
+window.addEventListener('mousemove', resetIdleTimer);
+window.addEventListener('touchstart', resetIdleTimer);
 resetIdleTimer();
 
 function formatTime(sec) {
@@ -636,8 +653,35 @@ $('#start').onclick=async()=>{
   await post('/api/player/start');
   await refresh();
 };
-$('#pause').onclick=async()=>{await post(`/api/player/${snapshot?.state.playbackStatus==='paused'?'resume':'pause'}`);await refresh();};
-$('#skip').onclick=async()=>{await post('/api/player/skip');await refresh();};
+
+$('#pause').onclick=async()=>{
+  const isPaused = snapshot?.state?.playbackStatus === 'paused';
+  if(isPaused){
+    youtubeAdapter.playVideo();
+    if(controller.getActiveType()==='audio') audio.play().catch(()=>{});
+    if(controller.getActiveType()==='video') video.play().catch(()=>{});
+    await post('/api/player/resume');
+  } else {
+    youtubeAdapter.pauseVideo();
+    if(controller.getActiveType()==='audio') audio.pause();
+    if(controller.getActiveType()==='video') video.pause();
+    await post('/api/player/pause');
+  }
+  await refresh();
+};
+
+$('#skip').onclick=async()=>{
+  await post('/api/player/skip');
+  await refresh();
+};
+
+$('#reset').onclick=async()=>{
+  if(confirm("ต้องการล้างคิวเพลงทั้งหมดใช่หรือไม่?")){
+    await post('/api/reset');
+    await refresh();
+  }
+};
+
 $('#unlock-play').onclick=()=>{
   $('#autoplay-overlay').style.display='none';
   youtubeAdapter.playVideo();

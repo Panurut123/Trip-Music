@@ -391,14 +391,22 @@ export class TripWorker {
     return item;
   }
 
-  reset() {
+  async reset() {
     this.items.length = 0;
     this.state.currentQueueItemId = null;
     this.state.playbackStatus = "idle";
     this.state.playbackPositionSeconds = 0;
     this.state.tripStarted = false;
     this.touch();
+    if (this.supabase) {
+      try {
+        await this.supabase.from("queue_items").delete().eq("room_id", this.state.roomId);
+      } catch (e) {
+        console.warn("[worker] reset supabase queue error:", e);
+      }
+    }
   }
+
 
   getQueue() { return [...this.items].sort((a, b) => a.sortOrder - b.sortOrder); }
 

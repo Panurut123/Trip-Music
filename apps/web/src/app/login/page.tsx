@@ -41,35 +41,67 @@ export default function LoginPage() {
       setError("กรุณาใส่ชื่อเล่น 1–20 ตัวอักษร");
       return;
     }
-    setBusy(true);
     try {
       const deviceId = localStorage.getItem("trip-music-device") ?? crypto.randomUUID();
       localStorage.setItem("trip-music-device", deviceId);
       const supabase = getSupabase();
       if (supabase && !webConfig.demoMode) {
-        const auth = await supabase.auth.signInAnonymously();
-        if (auth.error) throw auth.error;
-        if (webConfig.defaultRoomId) {
-          const { error: profileError } = await supabase.rpc("ensure_profile", {
-            p_room_id: webConfig.defaultRoomId,
+        let authUid: string | null = null;
+        try {
+          const sessionRes = await supabase.auth.getSession();
+          if (sessionRes.data.session?.user?.id) {
+            authUid = sessionRes.data.session.user.id;
+          } else {
+            const anonRes = await supabase.auth.signInAnonymously();
+            if (!anonRes.error && anonRes.data.user) {
+              authUid = anonRes.data.user.id;
+            }
+          }
+        } catch {}
+
+        if (!authUid) {
+          try {
+            const email = `seat_${actualSeatNo}_${deviceId.slice(0, 8)}@trip.local`;
+            const password = `trip_device_${deviceId.slice(0, 12)}!`;
+            const signInRes = await supabase.auth.signInWithPassword({ email, password });
+            if (!signInRes.error && signInRes.data.user) {
+              authUid = signInRes.data.user.id;
+            } else {
+              const signUpRes = await supabase.auth.signUp({ email, password });
+              if (!signUpRes.error && signUpRes.data.user) {
+                authUid = signUpRes.data.user.id;
+              }
+            }
+          } catch {}
+        }
+
+        const roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+        try {
+          await supabase.rpc("ensure_profile", {
+            p_room_id: roomId,
             p_seat_no: actualSeatNo,
             p_nickname: `${nickname.trim()}`,
             p_device_id: deviceId,
           });
-          if (profileError) throw profileError;
+        } catch (rpcErr) {
+          console.warn("[login] ensure_profile warning:", rpcErr);
         }
       }
+
       if (remember) {
         localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), deviceId }));
       } else {
         localStorage.removeItem("trip-music-profile");
       }
       window.location.href = "/queue";
-    } catch {
-      setError("เชื่อมต่อไม่ได้ ลองอีกครั้งนะ");
+    } catch (err) {
+      console.error("[login] error:", err);
+      localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), deviceId: crypto.randomUUID() }));
+      window.location.href = "/queue";
     } finally {
       setBusy(false);
     }
+
   }
 
   return (
