@@ -11,6 +11,7 @@ export default function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>(webConfig.demoMode ? demoItems : []);
   const [state, setState] = useState<SystemState | null>(webConfig.demoMode ? demoState : null);
   const [sourceUrl, setSourceUrl] = useState("");
+  const [requestedMode, setRequestedMode] = useState<"audio" | "video">("audio");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -19,15 +20,47 @@ export default function QueuePage() {
   const recentlyPlayed = items.filter(i => ["played", "skipped"].includes(i.status));
   const eta = useMemo(() => calculateEta(items, state?.playbackPositionSeconds ?? 0), [items, state?.playbackPositionSeconds]);
 
+  const tabletBase = typeof window !== "undefined" ? `http://${window.location.hostname}:3000` : "http://localhost:3000";
+
   useEffect(() => {
     if (webConfig.demoMode) return;
     let cancelled = false;
 
+    const saved = localStorage.getItem("trip-music-profile");
+    if (!saved && !webConfig.demoMode && typeof window !== "undefined") {
+      window.location.href = "/login";
+      return;
+    }
+
+    const initAuth = async () => {
+      const supabase = getSupabase();
+      if (!supabase || webConfig.demoMode) return;
+      try {
+        const sessionRes = await supabase.auth.getSession();
+        if (!sessionRes.data.session) {
+          await supabase.auth.signInAnonymously();
+        }
+        if (saved) {
+          const p = JSON.parse(saved);
+          const deviceId = p.deviceId || localStorage.getItem("trip-music-device") || crypto.randomUUID();
+          const roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+          await supabase.rpc("ensure_profile", {
+            p_room_id: roomId,
+            p_seat_no: p.seatNo ?? 7,
+            p_nickname: p.nickname ?? "Passenger",
+            p_device_id: deviceId,
+          });
+        }
+      } catch {}
+    };
+
+    void initAuth();
+
     const loadFromTablet = async () => {
       try {
         const [qRes, sRes] = await Promise.all([
-          fetch("http://localhost:3000/api/queue"),
-          fetch("http://localhost:3000/api/state"),
+          fetch(`${tabletBase}/api/queue`),
+          fetch(`${tabletBase}/api/state`),
         ]);
         if (qRes.ok && !cancelled) {
           const qData = await qRes.json();
@@ -43,15 +76,12 @@ export default function QueuePage() {
     const loadFromSupabase = async () => {
       const supabase = getSupabase();
       if (!supabase) { await loadFromTablet(); return; }
-      let roomId = webConfig.defaultRoomId;
+      let roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
       try {
-        if (!roomId) {
-          const rooms = await supabase.from("rooms").select("id").eq("name", "6/18").eq("active", true).limit(1).single();
-          roomId = rooms.data?.id ?? "";
-        }
-        if (!roomId) { await loadFromTablet(); return; }
-        const q = await supabase.from("queue_items").select("*").eq("room_id", roomId).order("sort_order");
-        const s = await supabase.from("system_state").select("*").eq("room_id", roomId).maybeSingle();
+        const [q, s] = await Promise.all([
+          supabase.from("queue_items").select("*").eq("room_id", roomId).order("sort_order"),
+          supabase.from("system_state").select("*").eq("room_id", roomId).maybeSingle(),
+        ]);
         if (cancelled) return;
         if (q.data) setItems(q.data.map(row => mapQueueRow(row as Record<string, unknown>)));
         else await loadFromTablet();
@@ -88,27 +118,36 @@ export default function QueuePage() {
       let enqueued = false;
       const supabase = getSupabase();
       if (!webConfig.demoMode && supabase) {
-        try {
-          let roomId = webConfig.defaultRoomId;
-          if (!roomId) {
-            const rooms = await supabase.from("rooms").select("id").eq("name", "6/18").single();
-            roomId = rooms.data?.id ?? "";
-          }
-          if (roomId) {
-            const { data, error } = await supabase.rpc("enqueue_track", { p_room_id: roomId, p_source_url: sourceUrl.trim(), p_requested_mode: "audio" });
-            if (!error && data) {
-              setItems(v => [...v, mapQueueRow(data as unknown as Record<string, unknown>)]);
-              enqueued = true;
-            }
-          }
-        } catch {}
+        let roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
+        const sessionRes = await supabase.auth.getSession();
+        if (!sessionRes.data.session) {
+          await supabase.auth.signInAnonymously();
+        }
+        const { data, error } = await supabase.rpc("enqueue_track", {
+          p_room_id: roomId,
+          p_source_url: sourceUrl.trim(),
+          p_requested_mode: requestedMode,
+        });
+        if (!error && data) {
+          setItems(v => [...v, mapQueueRow(data as unknown as Record<string, unknown>)]);
+          enqueued = true;
+        } else if (error) {
+          throw error;
+        }
       }
 
       if (!enqueued && !webConfig.demoMode) {
-        const res = await fetch("http://localhost:3000/api/queue/request", {
+        const saved = localStorage.getItem("trip-music-profile");
+        const profile = saved ? JSON.parse(saved) : { nickname: "You", seatNo: 7 };
+        const res = await fetch(`${tabletBase}/api/queue/request`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceUrl: sourceUrl.trim(), requesterNickname: "You", seatNo: 7 }),
+          body: JSON.stringify({
+            sourceUrl: sourceUrl.trim(),
+            requestedMode,
+            requesterNickname: profile.nickname ?? "You",
+            seatNo: profile.seatNo ?? 7,
+          }),
         });
         if (res.ok) {
           const item = await res.json();
@@ -120,20 +159,24 @@ export default function QueuePage() {
       if (enqueued) {
         const isYt = /youtube\.com|youtu\.be/.test(sourceUrl);
         setMessage(isYt ? "เพิ่มเพลงเข้าคิวแล้ว (YouTube • Online)" : "เพิ่มเพลงเข้าคิวแล้ว");
-      } else if (webConfig.demoMode) {
-        await new Promise(r => setTimeout(r, 450));
-        const n = items.length + 1;
-        setItems(v => [...v, { ...demoItems[1], id: `local-${n}`, title: "New request", artist: "Waiting for the bus mix", sortOrder: n, status: "waiting", sourceUrl, requestedAt: new Date().toISOString(), requesterNickname: "You", seatNo: 7, localMediaKey: null }]);
-        setMessage("เพิ่มเพลงเข้าคิวแล้ว");
+        setSourceUrl("");
       }
-      setSourceUrl("");
     } catch (error) {
-      const raw = error instanceof Error ? error.message : "";
-      setMessage(raw.includes("pending") ? "คุณมีเพลงรออยู่แล้ว 2 เพลง" : raw.includes("duplicate") ? "เพลงนี้อยู่ในคิวแล้ว" : "ลิงก์นี้ไม่ถูกต้อง");
+      const raw = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as any).message) : "";
+      if (raw.includes("pending limit")) {
+        setMessage("คุณมีเพลงรออยู่ในคิวครบ 2 เพลงแล้ว");
+      } else if (raw.includes("duplicate")) {
+        setMessage("เพลงนี้มีคนขออยู่ในคิวแล้ว");
+      } else if (raw.includes("requests disabled")) {
+        setMessage("ขณะนี้ปิดรับคำขอเพลงชั่วคราว");
+      } else {
+        setMessage("ไม่สามารถส่งเพลงได้ ตรวจสอบลิงก์อีกครั้ง");
+      }
     } finally {
       setSubmitting(false);
     }
   }
+
 
 
   const display = (item: QueueItem | null) => {
@@ -203,12 +246,29 @@ export default function QueuePage() {
 
         <section className="request-panel glass">
           <p className="eyebrow">REQUEST A TRACK</p>
+          <div className="mode-toggle">
+            <button
+              type="button"
+              className={`mode-toggle-btn ${requestedMode === "audio" ? "active" : ""}`}
+              onClick={() => setRequestedMode("audio")}
+            >
+              🎵 ฟังเพลง (Audio)
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle-btn ${requestedMode === "video" ? "active" : ""}`}
+              onClick={() => setRequestedMode("video")}
+            >
+              🎬 ดูคลิปเต็มจอ (Video)
+            </button>
+          </div>
           <form onSubmit={addRequest}>
             <input className="text-input" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="วางลิงก์ YouTube หรือ Direct Media" maxLength={500} />
             <button className="secondary-button" disabled={submitting}>{submitting ? "กำลังส่ง…" : "ขอเพลง"}</button>
           </form>
           {message && <p className="queue-foot" role="status">{message}</p>}
         </section>
+
 
         {recentlyPlayed.length > 0 && (
           <>
