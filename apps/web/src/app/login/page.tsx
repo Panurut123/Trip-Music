@@ -9,6 +9,7 @@ export default function LoginPage() {
   const [section, setSection] = useState<"ก" | "ข">("ก");
   const [seatInRoom, setSeatInRoom] = useState(7);
   const [nickname, setNickname] = useState("");
+  const [pin, setPin] = useState("");
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -30,7 +31,8 @@ export default function LoginPage() {
           }
         }
         if (p.section) setSection(p.section);
-        setNickname(p.nickname ?? "");
+        if (p.nickname) setNickname(p.nickname);
+        if (p.pin) setPin(p.pin);
       } catch {}
     }
   }, []);
@@ -42,6 +44,11 @@ export default function LoginPage() {
       setError("กรุณาใส่ชื่อเล่น 1–20 ตัวอักษร");
       return;
     }
+    if (!/^\d{4}$/.test(pin.trim())) {
+      setError("กรุณาใส่รหัส PIN ตัวเลข 4 หลัก (เช่น 1234)");
+      return;
+    }
+    setBusy(true);
     try {
       const deviceId = localStorage.getItem("trip-music-device") ?? generateUUID();
       localStorage.setItem("trip-music-device", deviceId);
@@ -78,33 +85,35 @@ export default function LoginPage() {
         }
 
         const roomId = webConfig.defaultRoomId || "b0f0fdc2-303c-4b05-a46b-5a8f1ec513cb";
-        try {
-          await supabase.rpc("ensure_profile", {
-            p_room_id: roomId,
-            p_seat_no: actualSeatNo,
-            p_nickname: `${nickname.trim()}`,
-            p_device_id: deviceId,
-          });
-        } catch (rpcErr) {
-          console.warn("[login] ensure_profile warning:", rpcErr);
+        const { error: profileError } = await supabase.rpc("ensure_profile", {
+          p_room_id: roomId,
+          p_seat_no: actualSeatNo,
+          p_nickname: `${nickname.trim()}`,
+          p_device_id: deviceId,
+          p_pin: pin.trim(),
+        });
+        if (profileError) {
+          if (String(profileError.message).includes("invalid_pin")) {
+            setError("รหัส PIN 4 หลักไม่ถูกต้อง (เลขที่นี้ถูกตั้งรหัสไว้แล้ว)");
+            setBusy(false);
+            return;
+          }
         }
       }
 
       if (remember) {
-        localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), deviceId }));
+        localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), pin: pin.trim(), deviceId }));
       } else {
         localStorage.removeItem("trip-music-profile");
       }
       window.location.href = "/queue";
     } catch (err) {
       console.error("[login] error:", err);
-      localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), deviceId: generateUUID() }));
+      localStorage.setItem("trip-music-profile", JSON.stringify({ section, seatInRoom, seatNo: actualSeatNo, nickname: nickname.trim(), pin: pin.trim(), deviceId: generateUUID() }));
       window.location.href = "/queue";
     } finally {
       setBusy(false);
     }
-
-
   }
 
   return (
@@ -159,6 +168,20 @@ export default function LoginPage() {
             maxLength={20}
             autoComplete="nickname"
           />
+
+          <label htmlFor="pin" style={{ marginTop: 14 }}>🔒 &nbsp; รหัส PIN 4 หลัก (สำหรับเข้าซ้ำ / ป้องกันผู้อื่นแย่งเลขที่)</label>
+          <input
+            id="pin"
+            className="text-input"
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            placeholder="รหัส PIN 4 ตัว (เช่น 1234)"
+            maxLength={4}
+            autoComplete="current-password"
+          />
+
           <label className="remember">
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             จำฉันไว้ในเครื่องนี้
@@ -167,11 +190,12 @@ export default function LoginPage() {
           <button className="primary-button" disabled={busy}>
             {busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ Trip Music  →"}
           </button>
-          <p className="login-note">ⓘ ชื่อของคุณใช้สำหรับแสดงว่าใครเป็นผู้ขอเพลงเท่านั้น</p>
+          <p className="login-note">ⓘ PIN 4 หลักใช้ป้องกันไม่ให้ผู้อื่นกดเลือกเลขที่ของคุณซ้ำ</p>
         </form>
         <Credit />
       </section>
     </main>
   );
 }
+
 

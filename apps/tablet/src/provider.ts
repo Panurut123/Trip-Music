@@ -23,14 +23,27 @@ export async function probeDurationSeconds(file: string): Promise<number | null>
 }
 export const extractYouTubeId = (raw: string): string | null => {
   try {
-    const u = new URL(raw);
-    const h = u.hostname.replace(/^www\./, "");
-    if (h === "youtu.be") return u.pathname.split("/").filter(Boolean)[0] ?? null;
-    if (["youtube.com", "music.youtube.com"].includes(h)) {
-      if (u.pathname === "/watch") return u.searchParams.get("v");
-      const m = /^\/(shorts|embed)\/([\w-]{11})/.exec(u.pathname);
-      return m?.[2] ?? null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.startsWith("http://") || trimmed.startsWith("https://") ? trimmed : `https://${trimmed}`;
+    const u = new URL(normalized);
+    const h = u.hostname.replace(/^(www\.|m\.)/, "");
+    if (h === "youtu.be") {
+      const seg = u.pathname.split("/").filter(Boolean)[0];
+      return seg ? seg.split("?")[0] : null;
     }
+    if (["youtube.com", "music.youtube.com"].includes(h)) {
+      if (u.pathname === "/watch" || u.pathname.startsWith("/watch")) {
+        const v = u.searchParams.get("v");
+        if (v) return v;
+      }
+      const m = /^\/(shorts|embed|live|v)\/([\w-]{11})/.exec(u.pathname);
+      if (m?.[2]) return m[2];
+      const vParam = u.searchParams.get("v");
+      if (vParam) return vParam;
+    }
+    const generalMatch = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|live\/|watch\?v=|watch\?.+&v=))([\w-]{11})/.exec(raw);
+    if (generalMatch?.[1]) return generalMatch[1];
   } catch {}
   return null;
 };
@@ -41,7 +54,7 @@ export class YouTubeMetadataResolver implements MetadataResolver {
     const id = extractYouTubeId(url);
     if (!id) throw new Error("Invalid YouTube URL");
 
-    // If API key is available, use YouTube Data API v3
+    // 1. If API key is available, use YouTube Data API v3
     if (tabletConfig.youtubeApiKey) {
       try {
         const u = new URL("https://www.googleapis.com/youtube/v3/videos");
@@ -82,53 +95,64 @@ export class YouTubeMetadataResolver implements MetadataResolver {
       }
     }
 
-    // Public fallback via YouTube official oEmbed API + watch page duration probe
-    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`;
-    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(tabletConfig.downloadTimeoutMs) });
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) throw new Error("Video does not allow embedding");
-      throw new Error(`YouTube metadata failed (${res.status})`);
-    }
-    const data = await res.json() as { title?: string; author_name?: string; thumbnail_url?: string };
-    const thumbnail = data.thumbnail_url ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-
-    // Probe duration from watch page HTML
-    let durationSeconds = 0;
+    // 2. Public fallback via YouTube official oEmbed API + watch page duration probe
     try {
-      const pageRes = await fetch(`https://www.youtube.com/watch?v=${id}`, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
-        signal: AbortSignal.timeout(tabletConfig.downloadTimeoutMs),
-      });
-      if (pageRes.ok) {
-        const html = await pageRes.text();
-        const metaDuration = /<meta\s+itemprop="duration"\s+content="([^"]+)"/i.exec(html)?.[1] ||
-                             /<meta\s+content="([^"]+)"\s+itemprop="duration"/i.exec(html)?.[1];
-        if (metaDuration) {
-          durationSeconds = parseIsoDuration(metaDuration);
-        } else {
-          const approxMatch = /"approxDurationMs":"(\d+)"/.exec(html);
-          if (approxMatch) {
-            durationSeconds = Math.round(Number(approxMatch[1]) / 1000);
-          } else {
-            const lengthMatch = /"lengthSeconds":"(\d+)"/.exec(html);
-            if (lengthMatch) durationSeconds = Number(lengthMatch[1]);
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`;
+      const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(tabletConfig.downloadTimeoutMs) });
+      if (res.ok) {
+        const data = await res.json() as { title?: string; author_name?: string; thumbnail_url?: string };
+        const thumbnail = data.thumbnail_url ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+
+        let durationSeconds = 0;
+        try {
+          const pageRes = await fetch(`https://www.youtube.com/watch?v=${id}`, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+            signal: AbortSignal.timeout(tabletConfig.downloadTimeoutMs),
+          });
+          if (pageRes.ok) {
+            const html = await pageRes.text();
+            const metaDuration = /<meta\s+itemprop="duration"\s+content="([^"]+)"/i.exec(html)?.[1] ||
+                                 /<meta\s+content="([^"]+)"\s+itemprop="duration"/i.exec(html)?.[1];
+            if (metaDuration) {
+              durationSeconds = parseIsoDuration(metaDuration);
+            } else {
+              const approxMatch = /"approxDurationMs":"(\d+)"/.exec(html);
+              if (approxMatch) durationSeconds = Math.round(Number(approxMatch[1]) / 1000);
+              else {
+                const lengthMatch = /"lengthSeconds":"(\d+)"/.exec(html);
+                if (lengthMatch) durationSeconds = Number(lengthMatch[1]);
+              }
+            }
           }
-        }
+        } catch {}
+
+        return {
+          title: data.title ?? "YouTube video",
+          artist: data.author_name ?? "YouTube creator",
+          durationSeconds,
+          thumbnailUrl: thumbnail,
+          coverUrlOriginal: thumbnail,
+          sourceUrl: url,
+          sourceKey: `youtube:${id}`,
+          sourceProvider: "youtube",
+        };
       }
     } catch {}
 
+    // 3. Resilient final fallback
     return {
-      title: data.title ?? "YouTube video",
-      artist: data.author_name ?? "YouTube creator",
-      durationSeconds,
-      thumbnailUrl: thumbnail,
-      coverUrlOriginal: thumbnail,
+      title: `YouTube Video`,
+      artist: `YouTube (${id})`,
+      durationSeconds: 0,
+      thumbnailUrl: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      coverUrlOriginal: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
       sourceUrl: url,
       sourceKey: `youtube:${id}`,
       sourceProvider: "youtube",
     };
   }
 }
+
 
 
 

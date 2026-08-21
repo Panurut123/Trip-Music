@@ -67,7 +67,13 @@ export type QueueItem = TrackMetadata & {
 export type SystemState = { roomId: string; requestsEnabled: boolean; tripStarted: boolean; currentQueueItemId?: string | null; playbackStatus: PlaybackStatus; playbackStartedAt?: string | null; playbackPositionSeconds: number; workerLastSeen?: string | null; playerLastSeen?: string | null; preparedBufferSeconds: number; cachedTrackCount: number; internetOnline: boolean; performanceMode: "balanced" | "lite"; videoEnabled: boolean; updatedAt: string; };
 
 export const enqueueSchema = z.object({ sourceUrl: z.string().trim().url().max(500), requestedMode: z.enum([RequestedMode.AUDIO, RequestedMode.VIDEO]).default(RequestedMode.AUDIO), profileId: z.string().uuid().optional() });
-export const profileSchema = z.object({ seatNo: z.number().int().min(1).max(38), nickname: z.string().trim().min(1).max(20).regex(/^[\p{L}\p{N} _.'-]+$/u), deviceId: z.string().min(8).max(100) });
+export const profileSchema = z.object({
+  seatNo: z.number().int().min(1).max(50),
+  nickname: z.string().trim().min(1).max(20).regex(/^[\p{L}\p{N} _.'-]+$/u),
+  deviceId: z.string().min(8).max(100),
+  pin: z.string().regex(/^\d{4}$/).optional(),
+});
+
 
 export function parseIsoDuration(v: string | null | undefined): number {
   if (!v || typeof v !== "string") return 0;
